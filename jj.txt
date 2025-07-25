@@ -14,8 +14,8 @@ if (!BOT_TOKEN) {
   console.error('Error: BOT_TOKEN is not defined in .env file');
   process.exit(1);
 }
-// console.log(`BOT_TOKEN: ${BOT_TOKEN}`);
-// console.log(`NODE_ENV: ${ENVIRONMENT}`);
+console.log(`BOT_TOKEN: ${BOT_TOKEN}`);
+console.log(`NODE_ENV: ${ENVIRONMENT}`);
 
 const bot = new Telegraf(BOT_TOKEN);
 
