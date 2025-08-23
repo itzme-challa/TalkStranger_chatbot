@@ -11,6 +11,14 @@ const ENVIRONMENT = process.env.NODE_ENV || '';
 const bot = new Telegraf(BOT_TOKEN);
 
 bot.command('about', about());
+bot.command('help', (ctx) => {
+  ctx.reply(
+    `📖 Available Commands:
+/about - Show information about the bot
+/help  - Show this help message
+/reset - Reset conversation context`
+  );
+});
 bot.on('message', greeting());
 
 //prod mode (Vercel)
