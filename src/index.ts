@@ -1,124 +1,246 @@
-// src/index.ts
 import { Telegraf } from 'telegraf';
-import { about } from './commands';
-import { greeting, search, stop, link, share } from './text';
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { development, production } from './core';
 import axios from 'axios';
+import { about } from './commands';
+import { greeting } from './text';
+import { development, production } from './core';
 import createDebug from 'debug';
-import { CallbackQuery } from 'telegraf/typings/core/types/typegram';
 
 const debug = createDebug('bot:main');
-
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL || '';
-
-if (!BOT_TOKEN) {
-  debug('BOT_TOKEN is not set');
-  throw new Error('BOT_TOKEN is not set');
-}
-
-if (!GOOGLE_SHEET_URL) {
-  debug('GOOGLE_SHEET_URL is not set');
-  throw new Error('GOOGLE_SHEET_URL is not set');
-}
+const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || ''; // URL of deployed Apps Script web app
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Commands
-bot.command('about', about());
-bot.command('start', greeting());
-bot.command('search', search());
-bot.command('stop', stop());
-bot.command('link', link());
-bot.command('share', share());
+// Helper function to generate a unique conversation ID
+const generateConversationId = () => {
+  return 'xxxxxxxxxxxxxxx'.replace(/[x]/g, () => {
+    return ((Math.random() * 36) | 0).toString(36);
+  });
+};
 
-// Handle callback queries for inline buttons
-bot.on('callback_query', async (ctx) => {
-  const callbackQuery = ctx.callbackQuery as CallbackQuery & { data: string };
-  const data = callbackQuery.data;
+// Command: /start
+bot.command('start', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  const userName = `${ctx.from?.first_name} ${ctx.from?.last_name || ''}`.trim();
+
+  if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    debug(`Handling callback query: ${data}`);
-    if (data === 'search') {
-      await search()(ctx);
-    } else if (data === 'stop') {
-      await stop()(ctx);
-    } else if (data === 'link') {
-      await link()(ctx);
-    } else if (data === 'share') {
-      await share()(ctx);
-    }
-    await ctx.answerCbQuery();
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    debug(`Error in callback query: ${errorMessage}`);
-    await ctx.answerCbQuery('An error occurred. Please try again.');
+    // Save user to Chats sheet with 'live' status
+    await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'addUser',
+      userId,
+      userName,
+    });
+
+    // Trigger search for a partner
+    await ctx.reply('Starting search for a partner...');
+    await handleSearch(ctx, userId);
+  } catch (error) {
+    debug('Error in /start:', error);
+    ctx.reply('An error occurred. Please try again.');
   }
 });
 
-// Handle text messages for forwarding to partner
-bot.on('text', async (ctx) => {
-  const chatId = ctx.message.chat.id.toString();
-  const text = ctx.message.text;
-
-  // Skip commands
-  if (text.startsWith('/')) return;
+// Command: /search
+bot.command('search', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    debug(`Processing text message for chat ID: ${chatId}`);
-    const response = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId });
-    const { partnerId, isLive } = response.data;
+    // Update user status to 'live'
+    await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'updateStatus',
+      userId,
+      status: 'live',
+    });
 
-    if (!isLive) {
-      await ctx.reply('You are not active. Use the button below to find a new partner.', {
-        reply_markup: {
-          inline_keyboard: [[{ text: '🚀 Find a partner', callback_data: 'search' }]],
-        },
-      });
-      return;
+    await handleSearch(ctx, userId);
+  } catch (error) {
+    debug('Error in /search:', error);
+    ctx.reply('An error occurred while searching. Please try again.');
+  }
+});
+
+// Command: /stop
+bot.command('stop', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId) return ctx.reply('Error: Unable to identify user.');
+
+  try {
+    // Get current conversation
+    const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    const conversation = response.data.conversation;
+    if (!conversation) {
+      return ctx.reply('You are not in a conversation.');
     }
 
+    const { conversationId, partnerId } = conversation;
+
+    // Update user status to 'offline' and end conversation
+    await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'stopConversation',
+      userId,
+      conversationId,
+    });
+
+    // Notify user
+    await ctx.reply(
+      `You stopped the dialog 🙄\nType /search to find a new partner\nConversation id: ${conversationId}\nTo report partner: @itzfewbot`
+    );
+
+    // Notify partner
     if (partnerId) {
-      const partnerResponse = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId: partnerId });
-      const { isLive: partnerIsLive } = partnerResponse.data;
-
-      if (partnerIsLive) {
-        await ctx.telegram.sendMessage(partnerId, text);
-      } else {
-        await ctx.reply('Your partner is no longer active. Use the button below to find a new partner.', {
-          reply_markup: {
-            inline_keyboard: [[{ text: '🚀 Find a partner', callback_data: 'search' }]],
-          },
-        });
-        await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
-      }
-    } else {
-      await ctx.reply('No partner found. Use the button below to find a new partner.', {
-        reply_markup: {
-          inline_keyboard: [[{ text: '🚀 Find a partner', callback_data: 'search' }]],
-        },
-      });
+      await bot.telegram.sendMessage(
+        partnerId,
+        `Your partner stopped the dialog 🙄\nType /search to find a new partner\nConversation id: ${conversationId}\nTo report partner: @itzfewbot`
+      );
     }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    debug(`Error in text handler: ${errorMessage}`);
-    await ctx.reply('Error fetching partner. Please try again.');
+  } catch (error) {
+    debug('Error in /stop:', error);
+    ctx.reply('An error occurred. Please try again.');
   }
 });
 
-// Vercel production mode
-export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
+// Command: /link
+bot.command('link', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId) return ctx.reply('Error: Unable to identify user.');
+
   try {
-    await production(req, res, bot);
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    debug(`Error in startVercel: ${errorMessage}`);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error' });
+    // Get current conversation
+    const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    const conversation = response.data.conversation;
+    if (!conversation || !conversation.partnerId) {
+      return ctx.reply('You are not in a conversation.');
     }
+
+    // Request partner to share profile
+    await bot.telegram.sendMessage(
+      conversation.partnerId,
+      `Your partner requested your profile. Use /share to send your profile.`
+    );
+    await ctx.reply('Profile request sent to your partner.');
+  } catch (error) {
+    debug('Error in /link:', error);
+    ctx.reply('An error occurred. Please try again.');
   }
+});
+
+// Command: /share
+bot.command('share', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  const userName = `${ctx.from?.first_name} ${ctx.from?.last_name || ''}`.trim();
+  if (!userId) return ctx.reply('Error: Unable to identify user.');
+
+  try {
+    // Get current conversation
+    const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    const conversation = response.data.conversation;
+    if (!conversation || !conversation.partnerId) {
+      return ctx.reply('You are not in a conversation.');
+    }
+
+    // Send profile to partner
+    await bot.telegram.sendMessage(
+      conversation.partnerId,
+      `Profile shared: ${userName} (@${ctx.from?.username || 'No username'})`
+    );
+    await ctx.reply('Your profile has been shared with your partner.');
+  } catch (error) {
+    debug('Error in /share:', error);
+    ctx.reply('An error occurred. Please try again.');
+  }
+});
+
+// Handle message forwarding between partners
+bot.on('message', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId || !ctx.message) return;
+
+  // Ignore commands
+  if ('text' in ctx.message && ctx.message.text?.startsWith('/')) return;
+
+  try {
+    // Get current conversation
+    const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    const conversation = response.data.conversation;
+    if (!conversation || !conversation.partnerId) {
+      return; // No active conversation
+    }
+
+    // Forward message to partner
+    await ctx.telegram.forwardMessage(
+      conversation.partnerId,
+      ctx.chat?.id!,
+      ctx.message.message_id
+    );
+  } catch (error) {
+    debug('Error forwarding message:', error);
+    ctx.reply('An error occurred while sending the message.');
+  }
+});
+
+// Existing commands
+bot.command('about', about());
+bot.on('message', greeting());
+
+// Helper function to handle partner search
+const handleSearch = async (ctx: any, userId: string) => {
+  try {
+    // Find a partner
+    const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'findPartner',
+      userId,
+    });
+
+    const partner = response.data.partner;
+    if (!partner) {
+      return ctx.reply('No partners available. Please try again later.');
+    }
+
+    const conversationId = generateConversationId();
+
+    // Create conversation
+    await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'createConversation',
+      userId,
+      partnerId: partner.userId,
+      conversationId,
+    });
+
+    // Notify both users
+    const message = `Partner found 🐵\n/stop — stop this dialog\n/link — request users profile\nConversation id: ${conversationId}\nTo report partner: @itzfewbot`;
+
+    await ctx.reply(message);
+    await bot.telegram.sendMessage(partner.userId, message);
+  } catch (error) {
+    debug('Error in handleSearch:', error);
+    ctx.reply('An error occurred while finding a partner.');
+  }
+};
+
+// Production mode (Vercel)
+export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
+  await production(req, res, bot);
 };
 
 // Development mode
