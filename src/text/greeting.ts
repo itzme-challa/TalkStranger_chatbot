@@ -20,7 +20,7 @@ const greeting = () => async (ctx: Context) => {
 
   if (messageId && chatId) {
     try {
-      // Save chat ID to Google Sheet
+      // Save chat ID and set status to live
       await axios.post(GOOGLE_SHEET_URL, { action: 'saveChatId', chatId });
       await replyToMessage(ctx, messageId, `Hello, ${userName}! Looking for a partner...`);
       await search()(ctx); // Trigger search automatically
@@ -38,6 +38,8 @@ const search = () => async (ctx: Context) => {
 
   if (messageId && chatId) {
     try {
+      // Ensure user is marked as live
+      await axios.post(GOOGLE_SHEET_URL, { action: 'saveChatId', chatId });
       const response = await axios.post(GOOGLE_SHEET_URL, { action: 'findPartner', chatId });
       const { status, partnerId } = response.data;
 
@@ -45,7 +47,7 @@ const search = () => async (ctx: Context) => {
         await replyToMessage(ctx, messageId, `Partner found 🐵\n/stop — stop this dialog\n/link — share your profile`);
         await ctx.telegram.sendMessage(partnerId, `Partner found 🐵\n/stop — stop this dialog\n/link — share your profile`);
       } else {
-        await replyToMessage(ctx, messageId, 'No partner found. Try again later.');
+        await replyToMessage(ctx, messageId, 'No live partners found. Try again later.');
       }
     } catch (error) {
       await replyToMessage(ctx, messageId, 'Error searching for a partner. Please try again.');
@@ -83,11 +85,25 @@ const link = () => async (ctx: Context) => {
   if (messageId && chatId) {
     try {
       const response = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId });
-      const { partnerId } = response.data;
+      const { partnerId, isLive } = response.data;
+
+      if (!isLive) {
+        await replyToMessage(ctx, messageId, 'You are not active. Type /search to find a new partner.');
+        return;
+      }
 
       if (partnerId) {
-        await ctx.telegram.sendMessage(partnerId, 'Your partner wants to share profiles. Use /share to send your profile link.');
-        await replyToMessage(ctx, messageId, 'Requested your partner to share their profile.');
+        // Check if partner is live
+        const partnerResponse = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId: partnerId });
+        const { isLive: partnerIsLive } = partnerResponse.data;
+
+        if (partnerIsLive) {
+          await ctx.telegram.sendMessage(partnerId, 'Your partner wants to share profiles. Use /share to send your profile link.');
+          await replyToMessage(ctx, messageId, 'Requested your partner to share their profile.');
+        } else {
+          await replyToMessage(ctx, messageId, 'Your partner is no longer active. Type /search to find a new partner.');
+          await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
+        }
       } else {
         await replyToMessage(ctx, messageId, 'No partner found. Type /search to find a new partner.');
       }
@@ -107,12 +123,26 @@ const share = () => async (ctx: Context) => {
   if (messageId && chatId) {
     try {
       const response = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId });
-      const { partnerId } = response.data;
+      const { partnerId, isLive } = response.data;
+
+      if (!isLive) {
+        await replyToMessage(ctx, messageId, 'You are not active. Type /search to find a new partner.');
+        return;
+      }
 
       if (partnerId) {
-        const profileLink = username ? `https://t.me/${username}` : `https://t.me/id${chatId}`;
-        await ctx.telegram.sendMessage(partnerId, `Your partner's profile: ${profileLink}`);
-        await replyToMessage(ctx, messageId, 'Your profile link has been shared with your partner.');
+        // Check if partner is live
+        const partnerResponse = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId: partnerId });
+        const { isLive: partnerIsLive } = partnerResponse.data;
+
+        if (partnerIsLive) {
+          const profileLink = username ? `https://t.me/${username}` : `https://t.me/id${chatId}`;
+          await ctx.telegram.sendMessage(partnerId, `Your partner's profile: ${profileLink}`);
+          await replyToMessage(ctx, messageId, 'Your profile link has been shared with your partner.');
+        } else {
+          await replyToMessage(ctx, messageId, 'Your partner is no longer active. Type /search to find a new partner.');
+          await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
+        }
       } else {
         await replyToMessage(ctx, messageId, 'No partner found. Type /search to find a new partner.');
       }
