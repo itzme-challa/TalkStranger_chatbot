@@ -5,6 +5,7 @@ import { greeting, search, stop, link, share } from './text';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
 import axios from 'axios';
+import { CallbackQuery } from 'telegraf/typings/core/types/typegram';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
@@ -22,7 +23,9 @@ bot.command('share', share());
 
 // Handle callback queries for inline buttons
 bot.on('callback_query', async (ctx) => {
-  const data = ctx.callbackQuery.data;
+  const callbackQuery = ctx.callbackQuery as CallbackQuery & { data: string };
+  const data = callbackQuery.data;
+
   if (data === 'search') {
     await search()(ctx);
   } else if (data === 'stop') {
