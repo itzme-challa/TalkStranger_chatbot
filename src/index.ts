@@ -5,11 +5,24 @@ import { greeting, search, stop, link, share } from './text';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
 import axios from 'axios';
+import createDebug from 'debug';
 import { CallbackQuery } from 'telegraf/typings/core/types/typegram';
+
+const debug = createDebug('bot:main');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
 const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL || '';
+
+if (!BOT_TOKEN) {
+  debug('BOT_TOKEN is not set');
+  throw new Error('BOT_TOKEN is not set');
+}
+
+if (!GOOGLE_SHEET_URL) {
+  debug('GOOGLE_SHEET_URL is not set');
+  throw new Error('GOOGLE_SHEET_URL is not set');
+}
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -26,16 +39,23 @@ bot.on('callback_query', async (ctx) => {
   const callbackQuery = ctx.callbackQuery as CallbackQuery & { data: string };
   const data = callbackQuery.data;
 
-  if (data === 'search') {
-    await search()(ctx);
-  } else if (data === 'stop') {
-    await stop()(ctx);
-  } else if (data === 'link') {
-    await link()(ctx);
-  } else if (data === 'share') {
-    await share()(ctx);
+  try {
+    debug(`Handling callback query: ${data}`);
+    if (data === 'search') {
+      await search()(ctx);
+    } else if (data === 'stop') {
+      await stop()(ctx);
+    } else if (data === 'link') {
+      await link()(ctx);
+    } else if (data === 'share') {
+      await share()(ctx);
+    }
+    await ctx.answerCbQuery();
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    debug(`Error in callback query: ${errorMessage}`);
+    await ctx.answerCbQuery('An error occurred. Please try again.');
   }
-  await ctx.answerCbQuery();
 });
 
 // Handle text messages for forwarding to partner
@@ -47,6 +67,7 @@ bot.on('text', async (ctx) => {
   if (text.startsWith('/')) return;
 
   try {
+    debug(`Processing text message for chat ID: ${chatId}`);
     const response = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId });
     const { partnerId, isLive } = response.data;
 
@@ -60,7 +81,6 @@ bot.on('text', async (ctx) => {
     }
 
     if (partnerId) {
-      // Check if partner is live
       const partnerResponse = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId: partnerId });
       const { isLive: partnerIsLive } = partnerResponse.data;
 
@@ -72,7 +92,6 @@ bot.on('text', async (ctx) => {
             inline_keyboard: [[{ text: '🚀 Find a partner', callback_data: 'search' }]],
           },
         });
-        // Clear partner's ID since they are not live
         await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
       }
     } else {
@@ -82,14 +101,24 @@ bot.on('text', async (ctx) => {
         },
       });
     }
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    debug(`Error in text handler: ${errorMessage}`);
     await ctx.reply('Error fetching partner. Please try again.');
   }
 });
 
 // Vercel production mode
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
-  await production(req, res, bot);
+  try {
+    await production(req, res, bot);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    debug(`Error in startVercel: ${errorMessage}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 };
 
 // Development mode
