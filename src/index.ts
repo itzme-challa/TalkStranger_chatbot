@@ -28,6 +28,18 @@ bot.command('start', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
+    // Check if user is already in an active conversation
+    const conversationResponse = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    if (conversationResponse.data.conversation) {
+      return ctx.reply(
+        `You are already in a conversation (ID: ${conversationResponse.data.conversation.conversationId}).\nUse /stop to end it or continue chatting.`
+      );
+    }
+
     // Add or update user in Chats sheet with 'live' status
     await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'addUser',
@@ -49,6 +61,18 @@ bot.command('search', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
+    // Check if user is already in an active conversation
+    const conversationResponse = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+      action: 'getUserConversation',
+      userId,
+    });
+
+    if (conversationResponse.data.conversation) {
+      return ctx.reply(
+        `You are already in a conversation (ID: ${conversationResponse.data.conversation.conversationId}).\nUse /stop to end it or continue chatting.`
+      );
+    }
+
     // Update user status to 'live'
     await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'updateStatus',
@@ -161,11 +185,12 @@ bot.command('share', async (ctx) => {
   }
 });
 
-// Handle message forwarding
+// Handle all messages (text, photos, videos, etc.)
 bot.on('message', async (ctx) => {
   const userId = ctx.from?.id.toString();
   if (!userId || !ctx.message) return;
 
+  // Ignore commands
   if ('text' in ctx.message && ctx.message.text?.startsWith('/')) return;
 
   try {
@@ -176,9 +201,10 @@ bot.on('message', async (ctx) => {
 
     const conversation = response.data.conversation;
     if (!conversation || !conversation.partnerId) {
-      return;
+      return ctx.reply("I don't understand, use /search to find a partner.");
     }
 
+    // Forward message to partner
     await ctx.telegram.forwardMessage(
       conversation.partnerId,
       ctx.chat?.id!,
