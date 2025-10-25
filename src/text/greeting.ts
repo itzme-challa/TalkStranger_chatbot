@@ -11,6 +11,23 @@ const replyToMessage = (ctx: Context, messageId: number, string: string) =>
     reply_parameters: { message_id: messageId },
   });
 
+// Function to encrypt chat ID (0-9 replaced with a-j)
+const encryptChatId = (chatId: string): string => {
+  const digitMap: { [key: string]: string } = {
+    '0': 'a',
+    '1': 'b',
+    '2': 'c',
+    '3': 'd',
+    '4': 'e',
+    '5': 'f',
+    '6': 'g',
+    '7': 'h',
+    '8': 'i',
+    '9': 'j',
+  };
+  return chatId.replace(/[0-9]/g, (digit) => digitMap[digit] || digit);
+};
+
 const greeting = () => async (ctx: Context) => {
   debug('Triggered "greeting" command');
 
@@ -44,8 +61,8 @@ const search = () => async (ctx: Context) => {
       const { status, partnerId } = response.data;
 
       if (status === 'success' && partnerId) {
-        await replyToMessage(ctx, messageId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request parterners profile`);
-        await ctx.telegram.sendMessage(partnerId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request Parterners profile`);
+        await replyToMessage(ctx, messageId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request partner's profile`);
+        await ctx.telegram.sendMessage(partnerId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request partner's profile`);
       } else {
         await replyToMessage(ctx, messageId, 'No live partners found. Try again later.');
       }
@@ -66,9 +83,16 @@ const stop = () => async (ctx: Context) => {
       const response = await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
       const { partnerId } = response.data;
 
-      await replyToMessage(ctx, messageId, 'You stopped the dialog 🙄\nType /search to find a new partner\n\nTo report partner: @itzfewbot');
+      const reportMessage = partnerId
+        ? `You stopped the dialog 🙄\nType /search to find a new partner\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`
+        : `You stopped the dialog 🙄\nType /search to find a new partner\n\nTo report partner: @itzfewbot`;
+
+      await replyToMessage(ctx, messageId, reportMessage);
       if (partnerId) {
-        await ctx.telegram.sendMessage(partnerId, 'Your partner has stopped the dialog 😞\nType /search to find a new partner\n\nTo report partner: @itzfewbot');
+        await ctx.telegram.sendMessage(
+          partnerId,
+          `Your partner has stopped the dialog 😞\nType /search to find a new partner\n\nTo report partner: @itzfewbot ${encryptChatId(chatId)}`
+        );
       }
     } catch (error) {
       await replyToMessage(ctx, messageId, 'Error stopping the chat. Please try again.');
@@ -101,7 +125,11 @@ const link = () => async (ctx: Context) => {
           await ctx.telegram.sendMessage(partnerId, 'Your partner wants to share profiles. Use /share to send your profile link.');
           await replyToMessage(ctx, messageId, 'Requested your partner to share their profile.');
         } else {
-          await replyToMessage(ctx, messageId, 'Your partner is no longer active. Type /search to find a new partner.');
+          await replyToMessage(
+            ctx,
+            messageId,
+            `Your partner is no longer active. Type /search to find a new partner.\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`
+          );
           await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
         }
       } else {
@@ -140,7 +168,11 @@ const share = () => async (ctx: Context) => {
           await ctx.telegram.sendMessage(partnerId, `Your partner's profile: ${profileLink}`);
           await replyToMessage(ctx, messageId, 'Your profile link has been shared with your partner.');
         } else {
-          await replyToMessage(ctx, messageId, 'Your partner is no longer active. Type /search to find a new partner.');
+          await replyToMessage(
+            ctx,
+            messageId,
+            `Your partner is no longer active. Type /search to find a new partner.\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`
+          );
           await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
         }
       } else {
