@@ -44,8 +44,8 @@ const search = () => async (ctx: Context) => {
       const { status, partnerId } = response.data;
 
       if (status === 'success' && partnerId) {
-        await replyToMessage(ctx, messageId, `Partner found 🐵\n/stop — stop this dialog\n/link — share your profile`);
-        await ctx.telegram.sendMessage(partnerId, `Partner found 🐵\n/stop — stop this dialog\n/link — share your profile`);
+        await replyToMessage(ctx, messageId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request parterners profile`);
+        await ctx.telegram.sendMessage(partnerId, `Partner found 🐵\n/stop — stop this dialog\n/link — Request Parterners profile`);
       } else {
         await replyToMessage(ctx, messageId, 'No live partners found. Try again later.');
       }
