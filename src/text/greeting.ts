@@ -13,23 +13,6 @@ const replyToMessage = (ctx: Context, messageId: number, string: string, markup?
     parse_mode: 'MarkdownV2',
   });
 
-// Function to encrypt chat ID (0-9 replaced with a-j)
-const encryptChatId = (chatId: string): string => {
-  const digitMap: { [key: string]: string } = {
-    '0': 'a',
-    '1': 'b',
-    '2': 'c',
-    '3': 'd',
-    '4': 'e',
-    '5': 'f',
-    '6': 'g',
-    '7': 'h',
-    '8': 'i',
-    '9': 'j',
-  };
-  return chatId.replace(/[0-9]/g, (digit) => digitMap[digit] || digit);
-};
-
 const greeting = () => async (ctx: Context) => {
   debug('Triggered "greeting" command');
 
@@ -63,7 +46,7 @@ const search = () => async (ctx: Context) => {
       const { status, partnerId } = response.data;
 
       if (status === 'success' && partnerId) {
-        const foundMessage = 'Partner found 🐵\! Start chatting now\\.';
+        const foundMessage = 'Partner found 🐵! Start chatting now.';
         const keyboard = {
           inline_keyboard: [
             [
@@ -103,15 +86,15 @@ const stop = () => async (ctx: Context) => {
       const { partnerId } = response.data;
 
       const reportMessage = partnerId
-        ? `You stopped the dialog 🙄\\.\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`
-        : `You stopped the dialog 🙄\\.`;
+        ? `You stopped the dialog 🙄.\n\nTo report partner: /report ${partnerId}`
+        : `You stopped the dialog 🙄.`;
       const keyboard = {
         inline_keyboard: [[{ text: '🚀 Find a new partner', callback_data: 'search' }]],
       };
 
       await replyToMessage(ctx, messageId, reportMessage, keyboard);
       if (partnerId) {
-        const partnerMessage = `Your partner has stopped the dialog 😞\\.\n\nTo report partner: @itzfewbot ${encryptChatId(chatId)}`;
+        const partnerMessage = `Your partner has stopped the dialog 😞.\n\nTo report partner: /report ${chatId}`;
         await ctx.telegram.sendMessage(partnerId, partnerMessage, { reply_markup: keyboard, parse_mode: 'MarkdownV2' });
       }
     } catch (error) {
@@ -159,7 +142,7 @@ const link = () => async (ctx: Context) => {
           await replyToMessage(
             ctx,
             messageId,
-            `Your partner is no longer active\\.\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`,
+            `Your partner is no longer active.\n\nTo report partner: /report ${partnerId}`,
             {
               inline_keyboard: [[{ text: '🚀 Find a new partner', callback_data: 'search' }]],
             }
@@ -224,7 +207,7 @@ const share = () => async (ctx: Context) => {
           await replyToMessage(
             ctx,
             messageId,
-            `Your partner is no longer active\\.\n\nTo report partner: @itzfewbot ${encryptChatId(partnerId)}`,
+            `Your partner is no longer active.\n\nTo report partner: /report ${partnerId}`,
             {
               inline_keyboard: [[{ text: '🚀 Find a new partner', callback_data: 'search' }]],
             }
