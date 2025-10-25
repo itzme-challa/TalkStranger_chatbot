@@ -33,8 +33,16 @@ const production = async (
     // Handle incoming request
     if (req.method === 'POST') {
       debug('Received POST request, handling update');
-      await bot.handleUpdate(req.body as Update, res);
-      return; // Ensure no further response is sent
+      try {
+        await bot.handleUpdate(req.body as Update, res);
+      } catch (updateError: unknown) {
+        const errorMessage = updateError instanceof Error ? updateError.message : 'Unknown error in handleUpdate';
+        debug(`Error handling update: ${errorMessage}`);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to process update' });
+        }
+      }
+      return;
     } else {
       debug('Received non-POST request, sending status');
       res.status(200).json('Listening to bot events...');
