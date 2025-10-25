@@ -40,8 +40,9 @@ const production = async (
       res.status(200).json('Listening to bot events...');
       return;
     }
-  } catch (error: Error) {
-    debug(`Error in production: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    debug(`Error in production: ${errorMessage}`);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error' });
     }
