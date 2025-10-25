@@ -40,7 +40,7 @@ const production = async (
       res.status(200).json('Listening to bot events...');
       return;
     }
-  } catch (error) {
+  } catch (error: Error) {
     debug(`Error in production: ${error.message}`);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error' });
