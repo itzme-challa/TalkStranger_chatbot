@@ -1,38 +1,51 @@
+// src/core/production.ts
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import createDebug from 'debug';
 import { Context, Telegraf } from 'telegraf';
 import { Update } from 'telegraf/typings/core/types/typegram';
 
-const debug = createDebug('bot:dev');
+const debug = createDebug('bot:prod');
 
-const PORT = (process.env.PORT && parseInt(process.env.PORT, 10)) || 3000;
-const VERCEL_URL = `${process.env.VERCEL_URL}`;
+const VERCEL_URL = process.env.VERCEL_URL;
 
 const production = async (
   req: VercelRequest,
   res: VercelResponse,
   bot: Telegraf<Context<Update>>,
 ) => {
-  debug('Bot runs in production mode');
-  debug(`setting webhook: ${VERCEL_URL}`);
+  try {
+    debug('Bot runs in production mode');
 
-  if (!VERCEL_URL) {
-    throw new Error('VERCEL_URL is not set.');
-  }
+    if (!VERCEL_URL) {
+      throw new Error('VERCEL_URL is not set.');
+    }
 
-  const getWebhookInfo = await bot.telegram.getWebhookInfo();
-  if (getWebhookInfo.url !== VERCEL_URL + '/api') {
-    debug(`deleting webhook ${VERCEL_URL}`);
-    await bot.telegram.deleteWebhook();
-    debug(`setting webhook: ${VERCEL_URL}/api`);
-    await bot.telegram.setWebhook(`${VERCEL_URL}/api`);
-  }
+    // Ensure webhook is set correctly
+    const webhookUrl = `${VERCEL_URL}/api`;
+    const getWebhookInfo = await bot.telegram.getWebhookInfo();
+    if (getWebhookInfo.url !== webhookUrl) {
+      debug(`Deleting existing webhook: ${getWebhookInfo.url}`);
+      await bot.telegram.deleteWebhook();
+      debug(`Setting webhook: ${webhookUrl}`);
+      await bot.telegram.setWebhook(webhookUrl);
+    }
 
-  if (req.method === 'POST') {
-    await bot.handleUpdate(req.body as unknown as Update, res);
-  } else {
-    res.status(200).json('Listening to bot events...');
+    // Handle incoming request
+    if (req.method === 'POST') {
+      debug('Received POST request, handling update');
+      await bot.handleUpdate(req.body as Update, res);
+      return; // Ensure no further response is sent
+    } else {
+      debug('Received non-POST request, sending status');
+      res.status(200).json('Listening to bot events...');
+      return;
+    }
+  } catch (error) {
+    debug(`Error in production: ${error.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-  debug(`starting webhook on port: ${PORT}`);
 };
+
 export { production };
