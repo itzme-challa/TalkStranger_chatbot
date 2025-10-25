@@ -8,7 +8,7 @@ import axios from 'axios';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL || ''; // Add Web App URL to Vercel environment variables
+const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL || '';
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -30,10 +30,25 @@ bot.on('text', async (ctx) => {
 
   try {
     const response = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId });
-    const { partnerId } = response.data;
+    const { partnerId, isLive } = response.data;
+
+    if (!isLive) {
+      await ctx.reply('You are not active. Type /search to find a new partner.');
+      return;
+    }
 
     if (partnerId) {
-      await ctx.telegram.sendMessage(partnerId, text);
+      // Check if partner is live
+      const partnerResponse = await axios.post(GOOGLE_SHEET_URL, { action: 'getPartner', chatId: partnerId });
+      const { isLive: partnerIsLive } = partnerResponse.data;
+
+      if (partnerIsLive) {
+        await ctx.telegram.sendMessage(partnerId, text);
+      } else {
+        await ctx.reply('Your partner is no longer active. Type /search to find a new partner.');
+        // Clear partner's ID since they are not live
+        await axios.post(GOOGLE_SHEET_URL, { action: 'stopChat', chatId });
+      }
     } else {
       await ctx.reply('No partner found. Type /search to find a new partner.');
     }
