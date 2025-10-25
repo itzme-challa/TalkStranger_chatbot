@@ -228,6 +228,10 @@ const handleSearch = async (ctx: any, userId: string) => {
       userId,
     });
 
+    if (response.data.error) {
+      return ctx.reply(response.data.error);
+    }
+
     const partner = response.data.partner;
     if (!partner) {
       return ctx.reply('No partners available. Please try again later.');
@@ -235,12 +239,16 @@ const handleSearch = async (ctx: any, userId: string) => {
 
     const conversationId = generateConversationId();
 
-    await axios.post(GOOGLE_APPS_SCRIPT_URL, {
+    const createResponse = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'createConversation',
       userId,
       partnerId: partner.userId,
       conversationId,
     });
+
+    if (createResponse.data.error) {
+      return ctx.reply(createResponse.data.error);
+    }
 
     const message = `Partner found 🐵\n/stop — stop this dialog\n/link — request users profile\nConversation id: ${conversationId}\nTo report partner: @itzfewbot`;
 
