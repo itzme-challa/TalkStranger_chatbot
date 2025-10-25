@@ -9,11 +9,11 @@ import createDebug from 'debug';
 const debug = createDebug('bot:main');
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || ''; // URL of deployed Apps Script web app
+const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Helper function to generate a unique conversation ID
+// Generate a unique conversation ID
 const generateConversationId = () => {
   return 'xxxxxxxxxxxxxxx'.replace(/[x]/g, () => {
     return ((Math.random() * 36) | 0).toString(36);
@@ -28,14 +28,13 @@ bot.command('start', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    // Save user to Chats sheet with 'live' status
+    // Add or update user in Chats sheet with 'live' status
     await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'addUser',
       userId,
       userName,
     });
 
-    // Trigger search for a partner
     await ctx.reply('Starting search for a partner...');
     await handleSearch(ctx, userId);
   } catch (error) {
@@ -70,7 +69,6 @@ bot.command('stop', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    // Get current conversation
     const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'getUserConversation',
       userId,
@@ -114,7 +112,6 @@ bot.command('link', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    // Get current conversation
     const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'getUserConversation',
       userId,
@@ -125,7 +122,6 @@ bot.command('link', async (ctx) => {
       return ctx.reply('You are not in a conversation.');
     }
 
-    // Request partner to share profile
     await bot.telegram.sendMessage(
       conversation.partnerId,
       `Your partner requested your profile. Use /share to send your profile.`
@@ -144,7 +140,6 @@ bot.command('share', async (ctx) => {
   if (!userId) return ctx.reply('Error: Unable to identify user.');
 
   try {
-    // Get current conversation
     const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'getUserConversation',
       userId,
@@ -155,7 +150,6 @@ bot.command('share', async (ctx) => {
       return ctx.reply('You are not in a conversation.');
     }
 
-    // Send profile to partner
     await bot.telegram.sendMessage(
       conversation.partnerId,
       `Profile shared: ${userName} (@${ctx.from?.username || 'No username'})`
@@ -167,16 +161,14 @@ bot.command('share', async (ctx) => {
   }
 });
 
-// Handle message forwarding between partners
+// Handle message forwarding
 bot.on('message', async (ctx) => {
   const userId = ctx.from?.id.toString();
   if (!userId || !ctx.message) return;
 
-  // Ignore commands
   if ('text' in ctx.message && ctx.message.text?.startsWith('/')) return;
 
   try {
-    // Get current conversation
     const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'getUserConversation',
       userId,
@@ -184,10 +176,9 @@ bot.on('message', async (ctx) => {
 
     const conversation = response.data.conversation;
     if (!conversation || !conversation.partnerId) {
-      return; // No active conversation
+      return;
     }
 
-    // Forward message to partner
     await ctx.telegram.forwardMessage(
       conversation.partnerId,
       ctx.chat?.id!,
@@ -206,7 +197,6 @@ bot.on('message', greeting());
 // Helper function to handle partner search
 const handleSearch = async (ctx: any, userId: string) => {
   try {
-    // Find a partner
     const response = await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'findPartner',
       userId,
@@ -219,7 +209,6 @@ const handleSearch = async (ctx: any, userId: string) => {
 
     const conversationId = generateConversationId();
 
-    // Create conversation
     await axios.post(GOOGLE_APPS_SCRIPT_URL, {
       action: 'createConversation',
       userId,
@@ -227,7 +216,6 @@ const handleSearch = async (ctx: any, userId: string) => {
       conversationId,
     });
 
-    // Notify both users
     const message = `Partner found 🐵\n/stop — stop this dialog\n/link — request users profile\nConversation id: ${conversationId}\nTo report partner: @itzfewbot`;
 
     await ctx.reply(message);
