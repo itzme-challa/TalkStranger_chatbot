@@ -475,7 +475,7 @@ bot.on('text', async (ctx: Context): Promise<void> => {
     } else {
       // No active conversation, use greeting middleware
       debug('No active conversation, falling back to greeting');
-      await greeting(ctx);
+      await greeting(ctx); // Correct: greeting expects a single Context argument
     }
   } catch (error) {
     debug(`Error handling message: ${error}`);
