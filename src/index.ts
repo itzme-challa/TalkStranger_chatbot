@@ -9,7 +9,7 @@ const debug = createDebug('bot:main');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwKVFFJm4l7ihoqJ7-cHZMwZkf0xst2HYwyR3ZUb-e4h6UyUAly4XIciligXVi_nng6/exec';
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxa0DsybP-Jagi6Ivc2AzNJtPCPc331JERwTILj5JGSuU7z6yD4e6tLD_7g0x92_Yge/exec';
 
 const bot = new Telegraf(BOT_TOKEN);
 
