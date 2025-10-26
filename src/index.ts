@@ -9,7 +9,7 @@ const debug = createDebug('bot:main');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxa0DsybP-Jagi6Ivc2AzNJtPCPc331JERwTILj5JGSuU7z6yD4e6tLD_7g0x92_Yge/exec';
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwKVFFJm4l7ihoqJ7-cHZMwZkf0xst2HYwyR3ZUb-e4h6UyUAly4XIciligXVi_nng6/exec';
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -429,23 +429,22 @@ bot.command('share', async (ctx: Context): Promise<void> => {
   }
 });
 
-// About command (Line ~433, fixing TS2345)
-bot.command('about', about);
+bot.command('about', about());
 
-// Handle text messages for active conversations or fall back to greeting
-bot.on('text', async (ctx: Context, next: () => Promise<void>): Promise<void> => {
+// Handle text messages for forwarding or greeting
+bot.on('text', async (ctx: Context): Promise<void> => {
   const message = ctx.message;
   const userId = ctx.from?.id?.toString();
   
   if (!userId || !message || !isTextMessage(message)) {
-    debug('Invalid message or userId in text handler');
-    return next();
+    debug('Invalid message or userId');
+    return;
   }
   
   const messageText = message.text;
   if (messageText.startsWith('/')) {
-    debug(`Ignoring command text: ${messageText}`);
-    return next();
+    debug('Ignoring command message');
+    return;
   }
   
   debug(`Handling text message from ${userId}: ${messageText}`);
@@ -466,24 +465,22 @@ bot.on('text', async (ctx: Context, next: () => Promise<void>): Promise<void> =>
     if (convData.success && convData.partnerId) {
       // Forward message to partner
       try {
-        await bot.telegram.sendMessage(convData.partnerId, messageText); // Line ~470
-        debug(`Message forwarded to partner ${convData.partnerId}`);
+        debug(`Forwarding message to partner ${convData.partnerId}`);
+        await bot.telegram.sendMessage(convData.partnerId, messageText);
       } catch (forwardError) {
         debug(`Error forwarding message: ${forwardError}`);
         console.error('Error forwarding message:', forwardError);
         await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
       }
     } else {
-      // No active conversation, use greeting middleware
-      debug('No active conversation, falling back to greeting');
-      await greeting(ctx); // Line ~479, fixing TS2554
+      // No active conversation, fall back to greeting
+      debug('No active conversation, triggering greeting');
+      await greeting(ctx);
     }
-    await next();
   } catch (error) {
-    debug(`Error handling message: ${error}`);
-    console.error('Error handling message:', error);
+    debug(`Error handling text message: ${error}`);
+    console.error('Error handling text message:', error);
     await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
-    await next();
   }
 });
 
