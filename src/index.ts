@@ -35,7 +35,8 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     const convData = await activeConv.json();
     
     if (convData.hasActive) {
-      return ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
+      await ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
+      return;
     }
     
     // Check user status
@@ -76,7 +77,8 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     const matchData = await randomUser.json();
     
     if (!matchData.success || !matchData.partnerId) {
-      return ctx.reply('😔 No available partners right now. Try again later with /start or /search!');
+      await ctx.reply('😔 No available partners right now. Try again later with /start or /search!');
+      return;
     }
     
     // Create conversation
@@ -113,7 +115,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
 }
 
 // Initialize user and find partner on start
-bot.command('start', async (ctx: Context) => {
+bot.command('start', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   const userName = `${ctx.from?.first_name || ''} ${ctx.from?.last_name || ''}`.trim();
   
@@ -168,7 +170,7 @@ bot.command('start', async (ctx: Context) => {
 });
 
 // Search for partner (sets user to live first)
-bot.command('search', async (ctx: Context) => {
+bot.command('search', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
   if (!userId) return;
@@ -178,7 +180,7 @@ bot.command('search', async (ctx: Context) => {
 });
 
 // Stop conversation
-bot.command('stop', async (ctx: Context) => {
+bot.command('stop', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
   if (!userId) return;
@@ -219,7 +221,7 @@ bot.command('stop', async (ctx: Context) => {
 });
 
 // Next command: End current conversation and find new partner
-bot.command('next', async (ctx: Context) => {
+bot.command('next', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
   if (!userId) return;
@@ -264,7 +266,7 @@ bot.command('next', async (ctx: Context) => {
 bot.command('about', about());
 
 // Handle all text messages
-bot.on('text', async (ctx: Context) => {
+bot.on('text', async (ctx: Context): Promise<void> => {
   const message = ctx.message;
   const userId = ctx.from?.id?.toString();
   
