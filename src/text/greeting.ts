@@ -1,14 +1,19 @@
-import { Context } from 'telegraf';
+import { Context, MiddlewareFn } from 'telegraf';
 import createDebug from 'debug';
 
 const debug = createDebug('bot:greeting_text');
 
+// Type guard for message_id
+const hasMessageId = (msg: any): msg is { message_id: number } => {
+  return msg && typeof msg === 'object' && 'message_id' in msg && typeof msg.message_id === 'number';
+};
+
 const replyToMessage = (ctx: Context, messageId: number, string: string) =>
   ctx.reply(string, {
-    reply_to_message_id: messageId,
+    reply_parameters: { message_id: messageId },
   });
 
-const greeting: Middleware<Context> = async (ctx: Context) => {
+const greeting: MiddlewareFn<Context> = async (ctx: Context) => {
   debug('Triggered "greeting" text command');
 
   const message = ctx.message;
@@ -32,4 +37,4 @@ const greeting: Middleware<Context> = async (ctx: Context) => {
   );
 };
 
-export { greeting };
+export { greeting, hasMessageId };
