@@ -1,6 +1,6 @@
-import { Telegraf, Context, MiddlewareFn } from 'telegraf';
+import { Telegraf, Context } from 'telegraf';
 import { about } from './commands';
-import { greeting, hasMessageId } from './text/greeting';
+import { greeting } from './text/greeting';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
 import createDebug from 'debug';
@@ -36,7 +36,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     debug(`checkActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (convData.hasActive) {
-      await ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
+      await ctx.reply('🌟 You\'re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
       return;
     }
     
@@ -172,7 +172,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
         })
       });
       
-      await ctx.reply(`🌈 Welcome back, ${userName}! Let’s find you a new chat partner...`);
+      await ctx.reply(`🌈 Welcome back, ${userName}! Let's find you a new chat partner...`);
       await findNewPartner(ctx, userId);
     } else {
       // Create new user
@@ -187,7 +187,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
         })
       });
       
-      await ctx.reply(`🎊 Welcome ${userName}! You're now in the chat system. Let’s find you a chat partner...`);
+      await ctx.reply(`🎊 Welcome ${userName}! You're now in the chat system. Let's find you a chat partner...`);
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
@@ -318,7 +318,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
       await ctx.reply('🔍 Looking for a new chat partner...');
       await findNewPartner(ctx, userId);
     } else {
-      await ctx.reply('🤔 No active conversation found. Let’s find you a new partner...');
+      await ctx.reply('🤔 No active conversation found. Let's find you a new partner...');
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
@@ -353,7 +353,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -368,7 +368,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error notifying partner about link request: ${partnerError}`);
       console.error('Error notifying partner about link request:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn’t send the profile request. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn't send the profile request. Please try again.');
     }
   } catch (error) {
     debug(`Error in /link: ${error}`);
@@ -402,7 +402,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -420,7 +420,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error sharing profile: ${partnerError}`);
       console.error('Error sharing profile:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn’t share your profile. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn't share your profile. Please try again.');
     }
   } catch (error) {
     debug(`Error in /share: ${error}`);
@@ -429,23 +429,23 @@ bot.command('share', async (ctx: Context): Promise<void> => {
   }
 });
 
-// About command (Line ~433, fixing TS2345)
+// About command - Fixed: Use the imported about function directly
 bot.command('about', about);
 
 // Handle text messages for active conversations or fall back to greeting
-bot.on('text', async (ctx: Context, next: () => Promise<void>): Promise<void> => {
+bot.on('text', async (ctx: Context): Promise<void> => {
   const message = ctx.message;
   const userId = ctx.from?.id?.toString();
   
   if (!userId || !message || !isTextMessage(message)) {
     debug('Invalid message or userId in text handler');
-    return next();
+    return;
   }
   
   const messageText = message.text;
   if (messageText.startsWith('/')) {
     debug(`Ignoring command text: ${messageText}`);
-    return next();
+    return;
   }
   
   debug(`Handling text message from ${userId}: ${messageText}`);
@@ -466,24 +466,22 @@ bot.on('text', async (ctx: Context, next: () => Promise<void>): Promise<void> =>
     if (convData.success && convData.partnerId) {
       // Forward message to partner
       try {
-        await bot.telegram.sendMessage(convData.partnerId, messageText); // Line ~470
+        await bot.telegram.sendMessage(convData.partnerId, messageText);
         debug(`Message forwarded to partner ${convData.partnerId}`);
       } catch (forwardError) {
         debug(`Error forwarding message: ${forwardError}`);
         console.error('Error forwarding message:', forwardError);
-        await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
+        await ctx.reply('😓 Sorry, I couldn't send your message. Please try again.');
       }
     } else {
-      // No active conversation, use greeting middleware
+      // No active conversation, use greeting function directly
       debug('No active conversation, falling back to greeting');
-      await greeting(ctx); // Line ~479 (fixing TS2554 by ensuring middleware chain)
+      await greeting(ctx);
     }
-    await next();
   } catch (error) {
     debug(`Error handling message: ${error}`);
     console.error('Error handling message:', error);
     await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
-    await next();
   }
 });
 
