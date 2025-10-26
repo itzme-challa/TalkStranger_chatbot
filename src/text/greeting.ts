@@ -27,12 +27,14 @@ const greeting: MiddlewareFn<Context> = async (ctx: Context): Promise<void> => {
 
   await replyToMessage(ctx, messageId, 
     `👋 Hi ${userName}! Welcome to the Chat Match Bot! 🎉\n\n` +
-    `Connect with random people and have fun chatting! Here’s how to get started:\n\n` +
+    `Connect anonymously with random people and have fun chatting! Here’s how to get started:\n\n` +
     `📋 Available commands:\n` +
     `/start - Join and find a new chat partner\n` +
     `/search - Find a new chat partner\n` +
     `/stop - End your current conversation\n` +
     `/next - Switch to a new partner\n` +
+    `/link - Request your partner’s profile\n` +
+    `/share - Share your profile with your partner\n` +
     `/about - Learn more about this bot\n\n` +
     `Try /start to meet someone new! 🚀`
   );
