@@ -42,6 +42,7 @@ function handleStart(): Middleware<Context<Update>> {
     const lastName = ctx.from?.last_name || '';
 
     if (!chatId || !userId) {
+      console.error('Invalid chatId or userId', { chatId, userId });
       await ctx.reply('Error: Unable to process your request. Please try again.');
       return;
     }
@@ -55,6 +56,8 @@ function handleStart(): Middleware<Context<Update>> {
       });
 
       const checkUserData = await checkUserResponse.json();
+      console.log('Check user response:', checkUserData);
+
       let welcomeMessage: string;
 
       if (checkUserData.exists) {
@@ -71,6 +74,7 @@ function handleStart(): Middleware<Context<Update>> {
         });
 
         const updateResult = await updateResponse.json();
+        console.log('Update user status response:', updateResult);
         if (updateResult.success) {
           welcomeMessage = 'Welcome back! You are now online and available for matching.';
         } else {
@@ -92,6 +96,7 @@ function handleStart(): Middleware<Context<Update>> {
         });
 
         const addResult = await addResponse.json();
+        console.log('Add user response:', addResult);
         if (addResult.success) {
           welcomeMessage = 'Welcome! You are now online and available for matching.';
         } else {
@@ -111,6 +116,7 @@ function handleStart(): Middleware<Context<Update>> {
       });
 
       const checkActiveConvData = await checkActiveConvResponse.json();
+      console.log('Check active conversation:', checkActiveConvData);
 
       if (checkActiveConvData.inConversation) {
         await ctx.reply(
@@ -128,6 +134,7 @@ function handleStart(): Middleware<Context<Update>> {
       });
 
       const findPartnerData = await findPartnerResponse.json();
+      console.log('Find partner response:', findPartnerData);
 
       if (!findPartnerData.success || !findPartnerData.partnerId || findPartnerData.partnerId === userId) {
         await ctx.reply(
@@ -140,7 +147,7 @@ function handleStart(): Middleware<Context<Update>> {
       const partnerId = findPartnerData.partnerId;
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Create conversation for both users
+      // Create conversation
       const createConvResponse = await fetch(`${SCRIPT_URL}createConversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -153,7 +160,10 @@ function handleStart(): Middleware<Context<Update>> {
         }),
       });
 
-      if (createConvResponse.ok) {
+      const createConvData = await createConvResponse.json();
+      console.log('Create conversation response:', createConvData);
+
+      if (createConvResponse.ok && createConvData.success) {
         await ctx.reply(
           '🎉 Perfect match found!\n\n' +
           'You have been connected with a partner. Start chatting now!\n\n' +
@@ -190,6 +200,7 @@ function handleSearch(): Middleware<Context<Update>> {
     const lastName = ctx.from?.last_name || '';
 
     if (!userId || !chatId) {
+      console.error('Invalid userId or chatId in /search:', { userId, chatId });
       await ctx.reply('Error: Unable to process your request. Please try again.');
       return;
     }
@@ -203,6 +214,7 @@ function handleSearch(): Middleware<Context<Update>> {
       });
 
       const checkActiveConvData = await checkActiveConvResponse.json();
+      console.log('Check active conversation in /search:', checkActiveConvData);
 
       if (checkActiveConvData.inConversation) {
         await ctx.reply(
@@ -220,6 +232,7 @@ function handleSearch(): Middleware<Context<Update>> {
       });
 
       const checkLiveData = await checkLiveResponse.json();
+      console.log('Check user status in /search:', checkLiveData);
 
       if (!checkLiveData.isLive) {
         const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
@@ -234,6 +247,7 @@ function handleSearch(): Middleware<Context<Update>> {
         });
 
         const updateResult = await updateResponse.json();
+        console.log('Update user status in /search:', updateResult);
         if (!updateResult.success) {
           await ctx.reply('Error setting your status to online. Please try again.');
           return;
@@ -248,6 +262,7 @@ function handleSearch(): Middleware<Context<Update>> {
       });
 
       const findPartnerData = await findPartnerResponse.json();
+      console.log('Find partner in /search:', findPartnerData);
 
       if (!findPartnerData.success || !findPartnerData.partnerId || findPartnerData.partnerId === userId) {
         await ctx.reply(
@@ -260,7 +275,7 @@ function handleSearch(): Middleware<Context<Update>> {
       const partnerId = findPartnerData.partnerId;
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Create conversation for both users
+      // Create conversation
       const createConvResponse = await fetch(`${SCRIPT_URL}createConversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,7 +288,10 @@ function handleSearch(): Middleware<Context<Update>> {
         }),
       });
 
-      if (createConvResponse.ok) {
+      const createConvData = await createConvResponse.json();
+      console.log('Create conversation in /search:', createConvData);
+
+      if (createConvResponse.ok && createConvData.success) {
         await ctx.reply(
           '🎉 Perfect match found!\n\n' +
           'You have been connected with a partner. Start chatting now!\n\n' +
@@ -289,7 +307,7 @@ function handleSearch(): Middleware<Context<Update>> {
             '💡 Use /stop to end this conversation anytime.'
           );
         } catch (partnerError) {
-          console.error('Error notifying partner:', partnerError);
+          console.error('Error notifying partner in /search:', partnerError);
         }
       } else {
         await ctx.reply('Error creating conversation. Please try again.');
@@ -307,6 +325,7 @@ function handleStop(): Middleware<Context<Update>> {
     const userId = ctx.from?.id?.toString() || '';
 
     if (!userId) {
+      console.error('Invalid userId in /stop:', { userId });
       await ctx.reply('Error: Unable to process your request. Please try again.');
       return;
     }
@@ -320,14 +339,18 @@ function handleStop(): Middleware<Context<Update>> {
       });
 
       const endConvData = await endConvResponse.json();
+      console.log('End conversation response:', endConvData);
 
       if (endConvData.success) {
         // Set user status to offline
-        await fetch(`${SCRIPT_URL}updateUserStatus`, {
+        const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId, status: 'offline' }),
         });
+
+        const updateResult = await updateResponse.json();
+        console.log('Update user status to offline:', updateResult);
 
         await ctx.reply(
           '👋 Conversation ended.\n\n' +
@@ -350,7 +373,7 @@ function handleStop(): Middleware<Context<Update>> {
               body: JSON.stringify({ userId: endConvData.partnerId, status: 'offline' }),
             });
           } catch (partnerError) {
-            console.error('Error notifying partner:', partnerError);
+            console.error('Error notifying partner in /stop:', partnerError);
           }
         }
       } else {
@@ -370,17 +393,20 @@ function handleMessage(): Middleware<Context<Update>> {
     const chatId = ctx.chat?.id?.toString() || '';
 
     if (!ctx.message || !('text' in ctx.message)) {
-      return; // Skip non-text messages or undefined messages
+      console.log('Non-text message received, ignoring:', { userId, chatId });
+      return; // Skip non-text messages
     }
 
     const messageText = ctx.message.text;
 
     if (!userId || !chatId || !messageText) {
+      console.error('Invalid message data:', { userId, chatId, messageText });
       return; // Skip empty or invalid messages
     }
 
     // Ignore bot commands
     if (messageText.startsWith('/')) {
+      console.log('Command received, handled by command middleware:', messageText);
       return;
     }
 
@@ -393,27 +419,26 @@ function handleMessage(): Middleware<Context<Update>> {
       });
 
       const checkConvData = await checkConvResponse.json();
+      console.log('Check active conversation in handleMessage:', checkConvData);
 
       if (checkConvData.inConversation && checkConvData.status === 'start') {
         // Forward message to partner
         const partnerId = checkConvData.partnerId;
+        console.log('Forwarding message to partner:', { userId, partnerId, messageText });
         
         try {
-          await bot.telegram.sendMessage(
-            partnerId,
-            messageText // Forward only the message text
-          );
+          await bot.telegram.sendMessage(partnerId, messageText);
         } catch (forwardError) {
           console.error('Error forwarding message:', forwardError);
           await ctx.reply('Error sending message to partner. Please try again.');
         }
       } else {
-        // Only show help message if user is not in an active conversation
+        // Only reply if user is not in an active conversation
+        console.log('User not in active conversation, sending help message:', { userId });
         await ctx.reply(
-          "I don't understand this command 😕\n\n" +
-          "To find a new partner:\n\n" +
-          "1️⃣ Use /start to go online\n" +
-          "2️⃣ Use /search to find a partner"
+          'To find a new partner:\n\n' +
+          '1️⃣ Use /start to go online\n' +
+          '2️⃣ Use /search to find a partner'
         );
       }
 
