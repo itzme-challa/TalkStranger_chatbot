@@ -8,12 +8,12 @@ const hasMessageId = (msg: any): msg is { message_id: number } => {
   return msg && typeof msg === 'object' && 'message_id' in msg && typeof msg.message_id === 'number';
 };
 
-const replyToMessage = (ctx: Context, messageId: number, string: string) =>
+const replyToMessage = (ctx: Context, messageId: number, string: string): Promise<void> =>
   ctx.reply(string, {
     reply_parameters: { message_id: messageId },
-  });
+  }).then(() => {});
 
-const greeting: MiddlewareFn<Context> = async (ctx: Context) => {
+const greeting: MiddlewareFn<Context> = async (ctx: Context): Promise<void> => {
   debug('Triggered "greeting" text command');
 
   const message = ctx.message;
