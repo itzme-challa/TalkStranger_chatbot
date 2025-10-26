@@ -1,4 +1,4 @@
-import { Telegraf, Context, Middleware } from 'telegraf';
+import { Telegraf, Context, MiddlewareFn } from 'telegraf';
 import { about } from './commands';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
@@ -244,7 +244,9 @@ bot.on('text', async (ctx: Context) => {
       );
       
       // Optional: Send confirmation to sender
-      await ctx.reply(`Message sent to your partner! 👤`, { reply_to_message_id: messageId });
+      await ctx.reply(`Message sent to your partner! 👤`, { 
+        reply_parameters: { message_id: messageId } 
+      });
     } catch (forwardError) {
       console.error('Error forwarding message:', forwardError);
       await ctx.reply('Sorry, I couldn\'t send your message. Please try again.');
