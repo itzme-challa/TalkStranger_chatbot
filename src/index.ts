@@ -1,13 +1,23 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf, Context, Middleware } from 'telegraf';
 import { about } from './commands';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
-const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwKVFFJm4l7ihoqJ7-cHZMwZkf0xst2HYwyR3ZUb-e4h6UyUAly4XIciligXVi_nng6/exec'; // Replace with your web app URL
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwKVFFJm4l7ihoqJ7-cHZMwZkf0xst2HYwyR3ZUb-e4h6UyUAly4XIciligXVi_nng6/exec';
 
 const bot = new Telegraf(BOT_TOKEN);
+
+// Type guard for text messages
+const isTextMessage = (msg: any): msg is { message_id: number; text: string } => {
+  return msg && typeof msg === 'object' && 'text' in msg && typeof msg.text === 'string';
+};
+
+// Type guard for message_id
+const hasMessageId = (msg: any): msg is { message_id: number } => {
+  return msg && typeof msg === 'object' && 'message_id' in msg && typeof msg.message_id === 'number';
+};
 
 // Initialize user on start
 bot.command('start', async (ctx: Context) => {
@@ -194,11 +204,15 @@ bot.command('about', about());
 
 // Handle all text messages
 bot.on('text', async (ctx: Context) => {
+  const message = ctx.message;
   const userId = ctx.from?.id?.toString();
-  const messageText = ctx.message?.text || '';
-  const messageId = ctx.message?.message_id;
   
-  if (!userId || !messageText || messageText.startsWith('/')) return;
+  if (!userId || !message || !isTextMessage(message)) return;
+  
+  const messageText = message.text;
+  const messageId = message.message_id;
+  
+  if (messageText.startsWith('/')) return;
   
   try {
     // Check if user is in an active conversation
