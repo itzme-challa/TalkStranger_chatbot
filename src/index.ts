@@ -407,21 +407,13 @@ function handleMessage(): Middleware<Context<Update>> {
           console.error('Error forwarding message:', forwardError);
           await ctx.reply('Error sending message to partner. Please try again.');
         }
-      } else if (checkConvData.status === 'end') {
+      } else {
+        // Only show help message if user is not in an active conversation
         await ctx.reply(
           "I don't understand this command 😕\n\n" +
-          "It looks like your previous conversation has ended. To find a new partner:\n\n" +
+          "To find a new partner:\n\n" +
           "1️⃣ Use /start to go online\n" +
           "2️⃣ Use /search to find a partner"
-        );
-      } else {
-        await ctx.reply(
-          "👋 Hi there!\n\n" +
-          "To start chatting with others:\n\n" +
-          "🔹 /start - Go online and match\n" +
-          "🔹 /search - Find a partner\n" +
-          "🔹 /stop - End current conversation\n\n" +
-          "Type /start to begin!"
         );
       }
 
