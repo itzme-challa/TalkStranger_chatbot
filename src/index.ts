@@ -19,7 +19,100 @@ const hasMessageId = (msg: any): msg is { message_id: number } => {
   return msg && typeof msg === 'object' && 'message_id' in msg && typeof msg.message_id === 'number';
 };
 
-// Initialize user on start
+// Helper function to find a new partner
+async function findNewPartner(ctx: Context, userId: string): Promise<void> {
+  try {
+    // Check if user is already in an active conversation
+    const activeConv = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'checkActiveConversation',
+        userId: userId
+      })
+    });
+    
+    const convData = await activeConv.json();
+    
+    if (convData.hasActive) {
+      return ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
+    }
+    
+    // Check user status
+    const userStatus = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getUserStatus',
+        userId: userId
+      })
+    });
+    
+    const statusData = await userStatus.json();
+    
+    if (statusData.status !== 'live') {
+      // Set user to live
+      await fetch(SHEET_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateUserStatus',
+          userId: userId,
+          status: 'live'
+        })
+      });
+    }
+    
+    // Find random live user (not self)
+    const randomUser = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'findRandomLiveUser',
+        excludeUserId: userId
+      })
+    });
+    
+    const matchData = await randomUser.json();
+    
+    if (!matchData.success || !matchData.partnerId) {
+      return ctx.reply('😔 No available partners right now. Try again later with /start or /search!');
+    }
+    
+    // Create conversation
+    const conversation = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'createConversation',
+        userId1: userId,
+        userId2: matchData.partnerId,
+        status: 'start'
+      })
+    });
+    
+    const convResult = await conversation.json();
+    
+    if (convResult.success) {
+      await ctx.reply(`🎉 Awesome! You've been matched with a new partner! Start chatting now. Use /stop to end or /next to find a new partner.`);
+      
+      // Notify partner
+      try {
+        await bot.telegram.sendMessage(matchData.partnerId, 
+          `🎉 You have a new match! Start chatting with your partner. Use /stop to end or /next to find a new partner.`
+        );
+      } catch (partnerError) {
+        console.error('Error notifying partner:', partnerError);
+        await ctx.reply('Your partner was matched but might not receive notifications. You can start chatting!');
+      }
+    }
+  } catch (error) {
+    console.error('Error finding new partner:', error);
+    await ctx.reply('😓 Sorry, something went wrong while finding a match. Please try again with /start or /search.');
+  }
+}
+
+// Initialize user and find partner on start
 bot.command('start', async (ctx: Context) => {
   const userId = ctx.from?.id?.toString();
   const userName = `${ctx.from?.first_name || ''} ${ctx.from?.last_name || ''}`.trim();
@@ -40,7 +133,7 @@ bot.command('start', async (ctx: Context) => {
     const userData = await checkUser.json();
     
     if (userData.exists) {
-      // Update existing user to live
+      // Update existing user to live and find partner
       await fetch(SHEET_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,7 +144,8 @@ bot.command('start', async (ctx: Context) => {
         })
       });
       
-      await ctx.reply(`Welcome back! You're now available for matching. Use /search to find a partner.`);
+      await ctx.reply(`🌈 Welcome back, ${userName}! Let’s find you a new chat partner...`);
+      await findNewPartner(ctx, userId);
     } else {
       // Create new user
       await fetch(SHEET_URL, {
@@ -64,99 +158,23 @@ bot.command('start', async (ctx: Context) => {
         })
       });
       
-      await ctx.reply(`Welcome ${userName}! You're now in the chat system. Use /search to find a partner.`);
+      await ctx.reply(`🎊 Welcome ${userName}! You're now in the chat system. Let’s find you a chat partner...`);
+      await findNewPartner(ctx, userId);
     }
   } catch (error) {
     console.error('Error in /start:', error);
-    await ctx.reply('Sorry, there was an error. Please try again later.');
+    await ctx.reply('😓 Sorry, there was an error. Please try again later with /start or /search.');
   }
 });
 
-// Search for partner
+// Search for partner (sets user to live first)
 bot.command('search', async (ctx: Context) => {
   const userId = ctx.from?.id?.toString();
   
   if (!userId) return;
   
-  try {
-    // Check if user is already in an active conversation
-    const activeConv = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'checkActiveConversation',
-        userId: userId
-      })
-    });
-    
-    const convData = await activeConv.json();
-    
-    if (convData.hasActive) {
-      return ctx.reply('You are already matched with a partner! Use /stop to end current conversation and /search again.');
-    }
-    
-    // Check user status
-    const userStatus = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getUserStatus',
-        userId: userId
-      })
-    });
-    
-    const statusData = await userStatus.json();
-    
-    if (statusData.status !== 'live') {
-      return ctx.reply('You need to /start first to be available for matching.');
-    }
-    
-    // Find random live user (not self)
-    const randomUser = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'findRandomLiveUser',
-        excludeUserId: userId
-      })
-    });
-    
-    const matchData = await randomUser.json();
-    
-    if (!matchData.success || !matchData.partnerId) {
-      return ctx.reply('No available partners right now. Try again later!');
-    }
-    
-    // Create conversation
-    const conversation = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'createConversation',
-        userId1: userId,
-        userId2: matchData.partnerId,
-        status: 'start'
-      })
-    });
-    
-    const convResult = await conversation.json();
-    
-    if (convResult.success) {
-      await ctx.reply(`🎉 Great! You've been matched with a partner! Start chatting now. Use /stop to end conversation.`);
-      
-      // Notify partner
-      try {
-        await bot.telegram.sendMessage(matchData.partnerId, 
-          `🎉 You have a new match! Start chatting with your partner. Use /stop to end conversation.`
-        );
-      } catch (partnerError) {
-        console.error('Error notifying partner:', partnerError);
-      }
-    }
-  } catch (error) {
-    console.error('Error in /search:', error);
-    await ctx.reply('Sorry, there was an error finding a match. Please try again.');
-  }
+  await ctx.reply('🔍 Looking for a new chat partner...');
+  await findNewPartner(ctx, userId);
 });
 
 // Stop conversation
@@ -179,24 +197,67 @@ bot.command('stop', async (ctx: Context) => {
     const endResult = await endConv.json();
     
     if (endResult.success) {
-      await ctx.reply('Conversation ended. You are now available for new matches. Use /search to find a new partner.');
+      await ctx.reply('👋 Conversation ended. You’re free to find a new partner with /start or /search!');
       
       // Notify partner if conversation existed
       if (endResult.partnerId) {
         try {
           await bot.telegram.sendMessage(endResult.partnerId, 
-            `Your partner has ended the conversation. You are now available for new matches. Use /search to find a new partner.`
+            `😔 Your partner has ended the conversation. Find a new partner with /start or /search!`
           );
         } catch (partnerError) {
           console.error('Error notifying partner about stop:', partnerError);
         }
       }
     } else {
-      await ctx.reply('No active conversation found. Use /search to find a partner.');
+      await ctx.reply('🤔 No active conversation found. Start a new one with /start or /search!');
     }
   } catch (error) {
     console.error('Error in /stop:', error);
-    await ctx.reply('Sorry, there was an error. Please try again.');
+    await ctx.reply('😓 Sorry, there was an error. Please try again.');
+  }
+});
+
+// Next command: End current conversation and find new partner
+bot.command('next', async (ctx: Context) => {
+  const userId = ctx.from?.id?.toString();
+  
+  if (!userId) return;
+  
+  try {
+    // Find and end user's active conversation
+    const endConv = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'endConversation',
+        userId: userId
+      })
+    });
+    
+    const endResult = await endConv.json();
+    
+    if (endResult.success && endResult.partnerId) {
+      await ctx.reply('👋 Current conversation ended. Looking for a new partner...');
+      
+      // Notify partner
+      try {
+        await bot.telegram.sendMessage(endResult.partnerId, 
+          `😔 Your partner has moved on to a new conversation. Find a new partner with /start or /search!`
+        );
+      } catch (partnerError) {
+        console.error('Error notifying partner about next:', partnerError);
+      }
+      
+      // Find new partner
+      await findNewPartner(ctx, userId);
+    } else {
+      await ctx.reply('🤔 No active conversation found. Let’s find you a new partner...');
+      await findNewPartner(ctx, userId);
+    }
+  } catch (error) {
+    console.error('Error in /next:', error);
+    await ctx.reply('😓 Sorry, there was an error. Please try again with /start or /search.');
   }
 });
 
@@ -230,9 +291,16 @@ bot.on('text', async (ctx: Context) => {
     if (!convData.success || !convData.partnerId) {
       // No active conversation, suggest starting one
       if (messageText.toLowerCase().includes('search') || messageText.toLowerCase().includes('match')) {
-        await ctx.reply('To find a partner, use /search command.');
+        await ctx.reply('🔍 To find a partner, use /start or /search command.');
       } else {
-        await ctx.reply("I don't understand. Please use /start to begin, /search to find a partner, or /stop to end a conversation.");
+        await ctx.reply(
+          `🤔 I’m not sure what you mean. Use these commands to get started:\n` +
+          `/start - Join and find a partner\n` +
+          `/search - Find a new partner\n` +
+          `/stop - End current conversation\n` +
+          `/next - Switch to a new partner\n` +
+          `/about - Learn more about the bot`
+        );
       }
       return;
     }
@@ -240,20 +308,20 @@ bot.on('text', async (ctx: Context) => {
     // Forward message to partner
     try {
       await bot.telegram.sendMessage(convData.partnerId, 
-        `Partner: ${ctx.from?.first_name || 'User'}\n\n${messageText}`
+        `💬 ${ctx.from?.first_name || 'User'}: ${messageText}`
       );
       
-      // Optional: Send confirmation to sender
-      await ctx.reply(`Message sent to your partner! 👤`, { 
+      // Send confirmation to sender
+      await ctx.reply(`✅ Message sent to your partner!`, { 
         reply_parameters: { message_id: messageId } 
       });
     } catch (forwardError) {
       console.error('Error forwarding message:', forwardError);
-      await ctx.reply('Sorry, I couldn\'t send your message. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
     }
   } catch (error) {
     console.error('Error handling message:', error);
-    await ctx.reply("I don't understand. Please use /search to find a partner.");
+    await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
   }
 });
 
