@@ -55,6 +55,7 @@ function handleStart(): Middleware<Context<Update>> {
       });
 
       const checkUserData = await checkUserResponse.json();
+      let welcomeMessage: string;
 
       if (checkUserData.exists) {
         // Update existing user to live status
@@ -71,12 +72,10 @@ function handleStart(): Middleware<Context<Update>> {
 
         const updateResult = await updateResponse.json();
         if (updateResult.success) {
-          await ctx.reply('✅ Welcome back! You are now online and available for matching.\n\nUse /search to find a partner immediately!');
-          
-          // Auto-start searching for a partner
-          await autoSearchPartner(ctx, userId, chatId);
+          welcomeMessage = 'Welcome back! You are now online and available for matching.';
         } else {
-          await ctx.reply('❌ Error updating your status. Please try again.');
+          await ctx.reply('Error updating your status. Please try again.');
+          return;
         }
       } else {
         // Add new user
@@ -94,19 +93,106 @@ function handleStart(): Middleware<Context<Update>> {
 
         const addResult = await addResponse.json();
         if (addResult.success) {
-          await ctx.reply('✅ Welcome! You are now online and available for matching.\n\nUse /search to find a partner immediately!');
-          
-          // Auto-start searching for a partner
-          await autoSearchPartner(ctx, userId, chatId);
+          welcomeMessage = 'Welcome! You are now online and available for matching.';
         } else {
-          await ctx.reply('❌ Error registering you. Please try again.');
+          await ctx.reply('Error registering you. Please try again.');
+          return;
         }
       }
 
+      await ctx.reply(welcomeMessage);
       await greeting()(ctx);
+
+      // Now attempt to match
+      // Check if already in an active conversation
+      const checkActiveConvResponse = await fetch(`${SCRIPT_URL}checkActiveConversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      const checkActiveConvData = await checkActiveConvResponse.json();
+
+      if (checkActiveConvData.inConversation) {
+        await ctx.reply(
+          `You are already matched with a partner! 👥\n\n` +
+          `To start a new conversation, first /stop your current one, then use /start or /search again.`
+        );
+        return;
+      }
+
+      // Find random live user (not self, not in conv)
+      const findPartnerResponse = await fetch(`${SCRIPT_URL}findRandomLiveUser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }), // Exclude self
+      });
+
+      const findPartnerData = await findPartnerResponse.json();
+
+      if (!findPartnerData.success || !findPartnerData.partnerId) {
+        await ctx.reply(
+          'No available partners right now. 😔\n\n' +
+          'Please wait a moment and try /search again. More people are joining every day!'
+        );
+        return;
+      }
+
+      const partnerId = findPartnerData.partnerId;
+      const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create conversation for both users
+      const createConv1Response = await fetch(`${SCRIPT_URL}createConversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          conversationId, 
+          userId1: userId, 
+          userId2: partnerId, 
+          status: 'start',
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      // Also create reverse entry for partner
+      const createConv2Response = await fetch(`${SCRIPT_URL}createConversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          conversationId, 
+          userId1: partnerId, 
+          userId2: userId, 
+          status: 'start',
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      if (createConv1Response.ok && createConv2Response.ok) {
+        await ctx.reply(
+          '🎉 Perfect match found!\n\n' +
+          'You have been connected with a partner. Start chatting now!\n\n' +
+          '💡 Use /stop to end this conversation anytime.'
+        );
+
+        // Send message to partner
+        try {
+          await bot.telegram.sendMessage(
+            partnerId,
+            '🎉 Perfect match found!\n\n' +
+            'You have been connected with a partner. Start chatting now!\n\n' +
+            '💡 Use /stop to end this conversation anytime.'
+          );
+        } catch (partnerError) {
+          console.error('Error notifying partner:', partnerError);
+          // Continue anyway, partner will see the conversation when they message
+        }
+      } else {
+        await ctx.reply('Error creating conversation. Please try again.');
+      }
+
     } catch (error) {
       console.error('Error in /start:', error);
-      await ctx.reply('❌ Sorry, there was an error processing your request. Please try again later.');
+      await ctx.reply('Sorry, there was an error processing your request. Please try again later.');
     }
   };
 }
@@ -115,128 +201,135 @@ function handleSearch(): Middleware<Context<Update>> {
   return async (ctx: Context<Update>) => {
     const userId = ctx.from?.id?.toString() || '';
     const chatId = ctx.chat?.id?.toString() || '';
+    const firstName = ctx.from?.first_name || '';
+    const lastName = ctx.from?.last_name || '';
 
     if (!userId || !chatId) {
-      await ctx.reply('❌ Error: Unable to process your request. Please try again.');
+      await ctx.reply('Error: Unable to process your request. Please try again.');
       return;
     }
 
     try {
-      // First, ensure user is live
-      await fetch(`${SCRIPT_URL}updateUserStatus`, {
+      // Check if user is already in an active conversation
+      const checkActiveConvResponse = await fetch(`${SCRIPT_URL}checkActiveConversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      const checkActiveConvData = await checkActiveConvResponse.json();
+
+      if (checkActiveConvData.inConversation) {
+        await ctx.reply(
+          `You are already matched with a partner! 👥\n\n` +
+          `To start a new conversation, first /stop your current one, then use /search again.`
+        );
+        return;
+      }
+
+      // Check if user is live, if not, set to live
+      const checkLiveResponse = await fetch(`${SCRIPT_URL}checkUserStatus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      const checkLiveData = await checkLiveResponse.json();
+
+      if (!checkLiveData.isLive) {
+        // Set to live (update or add)
+        const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            userId, 
+            status: 'live',
+            firstName,
+            lastName 
+          }),
+        });
+
+        const updateResult = await updateResponse.json();
+        if (!updateResult.success) {
+          await ctx.reply('Error setting your status to online. Please try again.');
+          return;
+        }
+      }
+
+      // Find random live user (not self, not in conv)
+      const findPartnerResponse = await fetch(`${SCRIPT_URL}findRandomLiveUser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }), // Exclude self
+      });
+
+      const findPartnerData = await findPartnerResponse.json();
+
+      if (!findPartnerData.success || !findPartnerData.partnerId) {
+        await ctx.reply(
+          'No available partners right now. 😔\n\n' +
+          'Please wait a moment and try /search again. More people are joining every day!'
+        );
+        return;
+      }
+
+      const partnerId = findPartnerData.partnerId;
+      const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create conversation for both users
+      const createConv1Response = await fetch(`${SCRIPT_URL}createConversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          userId, 
-          status: 'live'
+          conversationId, 
+          userId1: userId, 
+          userId2: partnerId, 
+          status: 'start',
+          timestamp: new Date().toISOString()
         }),
       });
 
-      // Auto-search for partner
-      await autoSearchPartner(ctx, userId, chatId);
+      // Also create reverse entry for partner
+      const createConv2Response = await fetch(`${SCRIPT_URL}createConversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          conversationId, 
+          userId1: partnerId, 
+          userId2: userId, 
+          status: 'start',
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      if (createConv1Response.ok && createConv2Response.ok) {
+        await ctx.reply(
+          '🎉 Perfect match found!\n\n' +
+          'You have been connected with a partner. Start chatting now!\n\n' +
+          '💡 Use /stop to end this conversation anytime.'
+        );
+
+        // Send message to partner
+        try {
+          await bot.telegram.sendMessage(
+            partnerId,
+            '🎉 Perfect match found!\n\n' +
+            'You have been connected with a partner. Start chatting now!\n\n' +
+            '💡 Use /stop to end this conversation anytime.'
+          );
+        } catch (partnerError) {
+          console.error('Error notifying partner:', partnerError);
+          // Continue anyway, partner will see the conversation when they message
+        }
+      } else {
+        await ctx.reply('Error creating conversation. Please try again.');
+      }
 
     } catch (error) {
       console.error('Error in /search:', error);
-      await ctx.reply('❌ Sorry, there was an error finding a partner. Please try again later.');
+      await ctx.reply('Sorry, there was an error finding a partner. Please try again later.');
     }
   };
-}
-
-// Helper function to auto-search for partner
-async function autoSearchPartner(ctx: Context<Update>, userId: string, chatId: string) {
-  try {
-    // Check if user is already in an active conversation
-    const checkActiveConvResponse = await fetch(`${SCRIPT_URL}checkActiveConversation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    });
-
-    const checkActiveConvData = await checkActiveConvResponse.json();
-
-    if (checkActiveConvData.inConversation) {
-      await ctx.reply(
-        `💬 You are already matched with a partner!\n\n` +
-        `To start a new conversation, first use /stop to end your current one, then use /search again.`
-      );
-      return;
-    }
-
-    await ctx.reply('🔍 Searching for a partner...');
-
-    // Find random live user (not self)
-    const findPartnerResponse = await fetch(`${SCRIPT_URL}findRandomLiveUser`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }), // Exclude self
-    });
-
-    const findPartnerData = await findPartnerResponse.json();
-
-    if (!findPartnerData.success || !findPartnerData.partnerId) {
-      await ctx.reply(
-        '⏳ No available partners right now. 😔\n\n' +
-        'Please wait a moment and try /search again. More people are joining every day!\n\n' +
-        'You are now live and will be available for others to find you.'
-      );
-      return;
-    }
-
-    const partnerId = findPartnerData.partnerId;
-    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Create conversation for both users
-    const createConv1Response = await fetch(`${SCRIPT_URL}createConversation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        conversationId, 
-        userId1: userId, 
-        userId2: partnerId, 
-        status: 'start',
-        timestamp: new Date().toISOString()
-      }),
-    });
-
-    // Also create reverse entry for partner
-    const createConv2Response = await fetch(`${SCRIPT_URL}createConversation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        conversationId, 
-        userId1: partnerId, 
-        userId2: userId, 
-        status: 'start',
-        timestamp: new Date().toISOString()
-      }),
-    });
-
-    if (createConv1Response.ok && createConv2Response.ok) {
-      const successMessage = 
-        '🎉 Perfect match found!\n\n' +
-        'You have been connected with a partner. Start chatting now!\n\n' +
-        '💡 Use /stop to end this conversation anytime.';
-
-      await ctx.reply(successMessage);
-
-      // Send message to partner
-      try {
-        await bot.telegram.sendMessage(
-          partnerId,
-          successMessage
-        );
-      } catch (partnerError) {
-        console.error('Error notifying partner:', partnerError);
-        // Continue anyway, partner will see the conversation when they message
-      }
-    } else {
-      await ctx.reply('❌ Error creating conversation. Please try /search again.');
-    }
-
-  } catch (error) {
-    console.error('Error in autoSearchPartner:', error);
-    await ctx.reply('❌ Sorry, there was an error finding a partner. Please try /search again.');
-  }
 }
 
 function handleStop(): Middleware<Context<Update>> {
@@ -244,7 +337,7 @@ function handleStop(): Middleware<Context<Update>> {
     const userId = ctx.from?.id?.toString() || '';
 
     if (!userId) {
-      await ctx.reply('❌ Error: Unable to process your request. Please try again.');
+      await ctx.reply('Error: Unable to process your request. Please try again.');
       return;
     }
 
@@ -276,34 +369,27 @@ function handleStop(): Middleware<Context<Update>> {
           try {
             await bot.telegram.sendMessage(
               endConvData.partnerId,
-              '💔 Your partner has ended the conversation.\n\n' +
-              'Use /start to find a new partner!'
+              'Your partner has ended the conversation. 😔\n\n' +
+              'Use /start or /search to find a new partner!'
             );
 
-            // Set partner status to offline and end their conversation too
+            // Set partner status to offline too
             await fetch(`${SCRIPT_URL}updateUserStatus`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId: endConvData.partnerId, status: 'offline' }),
             });
-
-            await fetch(`${SCRIPT_URL}endUserConversation`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: endConvData.partnerId }),
-            });
-
           } catch (partnerError) {
             console.error('Error notifying partner:', partnerError);
           }
         }
       } else {
-        await ctx.reply('ℹ️ No active conversation found. Use /start to find a partner!');
+        await ctx.reply('No active conversation found. Use /start or /search to find a partner!');
       }
 
     } catch (error) {
       console.error('Error in /stop:', error);
-      await ctx.reply('❌ Sorry, there was an error ending the conversation. Please try again later.');
+      await ctx.reply('Sorry, there was an error ending the conversation. Please try again later.');
     }
   };
 }
@@ -346,15 +432,15 @@ function handleMessage(): Middleware<Context<Update>> {
         try {
           await bot.telegram.sendMessage(
             partnerId,
-            `💬 ${ctx.from?.first_name || 'User'}: ${messageText}`
+            `${ctx.from?.first_name || 'User'}: ${messageText}`
           );
         } catch (forwardError) {
           console.error('Error forwarding message:', forwardError);
-          await ctx.reply('❌ Error sending message to partner. They may have ended the conversation. Use /stop to end this conversation.');
+          await ctx.reply('Error sending message to partner. Please try again.');
         }
       } else if (checkConvData.status === 'end') {
         await ctx.reply(
-          "💬 I don't understand this command 😕\n\n" +
+          "I don't understand this command 😕\n\n" +
           "It looks like your previous conversation has ended. To find a new partner:\n\n" +
           "1️⃣ Use /start to go online\n" +
           "2️⃣ Use /search to find a partner"
@@ -364,16 +450,16 @@ function handleMessage(): Middleware<Context<Update>> {
         await ctx.reply(
           "👋 Hi there!\n\n" +
           "To start chatting with others:\n\n" +
-          "🔹 /start - Go online and find a partner\n" +
-          "🔹 /search - Find a partner immediately\n" +
+          "🔹 /start - Go online and match\n" +
+          "🔹 /search - Find a partner\n" +
           "🔹 /stop - End current conversation\n\n" +
-          "Type /start to begin your chat journey!"
+          "Type /start to begin!"
         );
       }
 
     } catch (error) {
       console.error('Error handling message:', error);
-      await ctx.reply('❌ Sorry, there was an error processing your message. Please try again.');
+      await ctx.reply('Sorry, there was an error processing your message. Please try again.');
     }
   };
 }
