@@ -96,12 +96,22 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     const convResult = await conversation.json();
     
     if (convResult.success) {
-      await ctx.reply(`🎉 Awesome! You've been matched with a new partner! Start chatting now. Use /stop to end or /next to find a new partner.`);
+      await ctx.reply(
+        `Partner found 🐵\n` +
+        `/stop — stop this dialog\n` +
+        `/link — request your partner profile\n` +
+        `Conversation id: ${convResult.conversationId}\n` +
+        `To report partner: @itzfew`
+      );
       
       // Notify partner
       try {
         await bot.telegram.sendMessage(matchData.partnerId, 
-          `🎉 You have a new match! Start chatting with your partner. Use /stop to end or /next to find a new partner.`
+          `Partner found 🐵\n` +
+          `/stop — stop this dialog\n` +
+          `/link — request your partner profile\n` +
+          `Conversation id: ${convResult.conversationId}\n` +
+          `To report partner: @itzfew`
         );
       } catch (partnerError) {
         console.error('Error notifying partner:', partnerError);
@@ -199,13 +209,21 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
     const endResult = await endConv.json();
     
     if (endResult.success) {
-      await ctx.reply('👋 Conversation ended. You’re free to find a new partner with /start or /search!');
+      await ctx.reply(
+        `You stopped the dialog 🙄\n` +
+        `Type /search to find a new partner\n` +
+        `Conversation id: ${endResult.conversationId || 'N/A'}\n` +
+        `To report partner: @itzfew`
+      );
       
       // Notify partner if conversation existed
       if (endResult.partnerId) {
         try {
           await bot.telegram.sendMessage(endResult.partnerId, 
-            `😔 Your partner has ended the conversation. Find a new partner with /start or /search!`
+            `Your partner has stopped the dialog 😞\n` +
+            `Type /search to find a new partner\n` +
+            `Conversation id: ${endResult.conversationId || 'N/A'}\n` +
+            `To report partner: @itzfew`
           );
         } catch (partnerError) {
           console.error('Error notifying partner about stop:', partnerError);
@@ -214,7 +232,7 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
     } else {
       await ctx.reply('🤔 No active conversation found. Start a new one with /start or /search!');
     }
-  } catch (error) {
+  } else {
     console.error('Error in /stop:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
@@ -240,18 +258,27 @@ bot.command('next', async (ctx: Context): Promise<void> => {
     const endResult = await endConv.json();
     
     if (endResult.success && endResult.partnerId) {
-      await ctx.reply('👋 Current conversation ended. Looking for a new partner...');
+      await ctx.reply(
+        `You stopped the dialog 🙄\n` +
+        `Type /search to find a new partner\n` +
+        `Conversation id: ${endResult.conversationId || 'N/A'}\n` +
+        `To report partner: @itzfew`
+      );
       
       // Notify partner
       try {
         await bot.telegram.sendMessage(endResult.partnerId, 
-          `😔 Your partner has moved on to a new conversation. Find a new partner with /start or /search!`
+          `Your partner has stopped the dialog 😞\n` +
+          `Type /search to find a new partner\n` +
+          `Conversation id: ${endResult.conversationId || 'N/A'}\n` +
+          `To report partner: @itzfew`
         );
       } catch (partnerError) {
         console.error('Error notifying partner about next:', partnerError);
       }
       
       // Find new partner
+      await ctx.reply('🔍 Looking for a new chat partner...');
       await findNewPartner(ctx, userId);
     } else {
       await ctx.reply('🤔 No active conversation found. Let’s find you a new partner...');
@@ -260,6 +287,91 @@ bot.command('next', async (ctx: Context): Promise<void> => {
   } catch (error) {
     console.error('Error in /next:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again with /start or /search.');
+  }
+});
+
+// Link command: Request partner's profile
+bot.command('link', async (ctx: Context): Promise<void> => {
+  const userId = ctx.from?.id?.toString();
+  
+  if (!userId) return;
+  
+  try {
+    // Check if user is in an active conversation
+    const activeConv = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getActiveConversation',
+        userId: userId
+      })
+    });
+    
+    const convData = await activeConv.json();
+    
+    if (!convData.success || !convData.partnerId) {
+      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
+      return;
+    }
+    
+    // Notify partner of profile request
+    try {
+      await bot.telegram.sendMessage(convData.partnerId, 
+        `Your partner wants your profile /share here\n` +
+        `Conversation id: ${convData.conversationId}`
+      );
+      await ctx.reply(`📬 Profile request sent to your partner! They can share with /share.\nConversation id: ${convData.conversationId}`);
+    } catch (partnerError) {
+      console.error('Error notifying partner about link request:', partnerError);
+      await ctx.reply('😓 Sorry, I couldn’t send the profile request. Please try again.');
+    }
+  } catch (error) {
+    console.error('Error in /link:', error);
+    await ctx.reply('😓 Sorry, there was an error. Please try again.');
+  }
+});
+
+// Share command: Share profile URL with partner
+bot.command('share', async (ctx: Context): Promise<void> => {
+  const userId = ctx.from?.id?.toString();
+  
+  if (!userId) return;
+  
+  try {
+    // Check if user is in an active conversation
+    const activeConv = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getActiveConversation',
+        userId: userId
+      })
+    });
+    
+    const convData = await activeConv.json();
+    
+    if (!convData.success || !convData.partnerId) {
+      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
+      return;
+    }
+    
+    // Get user profile URL (assuming Telegram user ID can be used to construct profile URL)
+    const profileUrl = `https://t.me/${ctx.from?.username || userId}`;
+    
+    // Send profile to partner
+    try {
+      await bot.telegram.sendMessage(convData.partnerId, 
+        `Your partner shared their profile: ${profileUrl}\n` +
+        `Conversation id: ${convData.conversationId}`
+      );
+      await ctx.reply(`📤 Your profile has been shared with your partner!\nConversation id: ${convData.conversationId}`);
+    } catch (partnerError) {
+      console.error('Error sharing profile:', partnerError);
+      await ctx.reply('😓 Sorry, I couldn’t share your profile. Please try again.');
+    }
+  } catch (error) {
+    console.error('Error in /share:', error);
+    await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
 });
 
@@ -301,22 +413,17 @@ bot.on('text', async (ctx: Context): Promise<void> => {
           `/search - Find a new partner\n` +
           `/stop - End current conversation\n` +
           `/next - Switch to a new partner\n` +
+          `/link - Request partner’s profile\n` +
+          `/share - Share your profile\n` +
           `/about - Learn more about the bot`
         );
       }
       return;
     }
     
-    // Forward message to partner
+    // Forward message to partner anonymously
     try {
-      await bot.telegram.sendMessage(convData.partnerId, 
-        `💬 ${ctx.from?.first_name || 'User'}: ${messageText}`
-      );
-      
-      // Send confirmation to sender
-      await ctx.reply(`✅ Message sent to your partner!`, { 
-        reply_parameters: { message_id: messageId } 
-      });
+      await bot.telegram.sendMessage(convData.partnerId, messageText);
     } catch (forwardError) {
       console.error('Error forwarding message:', forwardError);
       await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
