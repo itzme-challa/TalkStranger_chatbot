@@ -26,14 +26,15 @@ const greeting: MiddlewareFn<Context> = async (ctx: Context) => {
   const userName = `${ctx.from?.first_name || ''} ${ctx.from?.last_name || ''}`.trim();
 
   await replyToMessage(ctx, messageId, 
-    `Hi ${userName}! 👋\n\n` +
-    `Welcome to the Chat Match Bot!\n\n` +
-    `Available commands:\n` +
-    `/start - Begin using the bot\n` +
-    `/search - Find a random chat partner\n` +
-    `/stop - End current conversation\n` +
-    `/about - Learn more about the bot\n\n` +
-    `Start with /start to get matched! 🎉`
+    `👋 Hi ${userName}! Welcome to the Chat Match Bot! 🎉\n\n` +
+    `Connect with random people and have fun chatting! Here’s how to get started:\n\n` +
+    `📋 Available commands:\n` +
+    `/start - Join and find a new chat partner\n` +
+    `/search - Find a new chat partner\n` +
+    `/stop - End your current conversation\n` +
+    `/next - Switch to a new partner\n` +
+    `/about - Learn more about this bot\n\n` +
+    `Try /start to meet someone new! 🚀`
   );
 };
 
