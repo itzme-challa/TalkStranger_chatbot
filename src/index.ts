@@ -100,7 +100,7 @@ function handleStart(): Middleware<Context<Update>> {
         if (addResult.success) {
           welcomeMessage = 'Welcome! You are now online and available for matching.';
         } else {
-          await ctx.reply('Error registering you. Please try again.');
+          await ctx.reply('Error registering you: ' + (addResult.error || 'Unknown error'));
           return;
         }
       }
@@ -182,7 +182,7 @@ function handleStart(): Middleware<Context<Update>> {
           console.error('Error notifying partner:', partnerError);
         }
       } else {
-        await ctx.reply('Error creating conversation. Please try again.');
+        await ctx.reply('Error creating conversation: ' + (createConvData.error || 'Unknown error'));
       }
 
     } catch (error) {
@@ -235,22 +235,53 @@ function handleSearch(): Middleware<Context<Update>> {
       console.log('Check user status in /search:', checkLiveData);
 
       if (!checkLiveData.isLive) {
-        const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
+        // Ensure user exists before updating status
+        const checkUserResponse = await fetch(`${SCRIPT_URL}checkUser`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            userId, 
-            status: 'live',
-            firstName,
-            lastName 
-          }),
+          body: JSON.stringify({ userId }),
         });
 
-        const updateResult = await updateResponse.json();
-        console.log('Update user status in /search:', updateResult);
-        if (!updateResult.success) {
-          await ctx.reply('Error setting your status to online. Please try again.');
-          return;
+        const checkUserData = await checkUserResponse.json();
+        console.log('Check user in /search:', checkUserData);
+
+        if (!checkUserData.exists) {
+          const addResponse = await fetch(`${SCRIPT_URL}addUser`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              userId, 
+              chatId, 
+              firstName, 
+              lastName, 
+              status: 'live' 
+            }),
+          });
+
+          const addResult = await addResponse.json();
+          console.log('Add user in /search:', addResult);
+          if (!addResult.success) {
+            await ctx.reply('Error registering you: ' + (addResult.error || 'Unknown error'));
+            return;
+          }
+        } else {
+          const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              userId, 
+              status: 'live',
+              firstName,
+              lastName 
+            }),
+          });
+
+          const updateResult = await updateResponse.json();
+          console.log('Update user status in /search:', updateResult);
+          if (!updateResult.success) {
+            await ctx.reply('Error setting your status to online. Please try again.');
+            return;
+          }
         }
       }
 
@@ -310,7 +341,7 @@ function handleSearch(): Middleware<Context<Update>> {
           console.error('Error notifying partner in /search:', partnerError);
         }
       } else {
-        await ctx.reply('Error creating conversation. Please try again.');
+        await ctx.reply('Error creating conversation: ' + (createConvData.error || 'Unknown error'));
       }
 
     } catch (error) {
@@ -357,13 +388,15 @@ function handleStop(): Middleware<Context<Update>> {
           'You are now offline. Use /start to go online and find a new partner!'
         );
 
+niczego
+
         // Notify partner if they exist
         if (endConvData.partnerId) {
           try {
             await bot.telegram.sendMessage(
               endConvData.partnerId,
               'Your partner has ended the conversation. 😔\n\n' +
-              'Use /start or /search to find a new partner!'
+              ' Use /start or /search to find a new partner!'
             );
 
             // Set partner status to offline
