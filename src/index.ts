@@ -103,7 +103,6 @@ function handleStart(): Middleware<Context<Update>> {
       await ctx.reply(welcomeMessage);
       await greeting()(ctx);
 
-      // Now attempt to match
       // Check if already in an active conversation
       const checkActiveConvResponse = await fetch(`${SCRIPT_URL}checkActiveConversation`, {
         method: 'POST',
@@ -125,12 +124,12 @@ function handleStart(): Middleware<Context<Update>> {
       const findPartnerResponse = await fetch(`${SCRIPT_URL}findRandomLiveUser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }), // Exclude self
+        body: JSON.stringify({ userId }),
       });
 
       const findPartnerData = await findPartnerResponse.json();
 
-      if (!findPartnerData.success || !findPartnerData.partnerId) {
+      if (!findPartnerData.success || !findPartnerData.partnerId || findPartnerData.partnerId === userId) {
         await ctx.reply(
           'No available partners right now. 😔\n\n' +
           'Please wait a moment and try /search again. More people are joining every day!'
@@ -142,7 +141,7 @@ function handleStart(): Middleware<Context<Update>> {
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       // Create conversation for both users
-      const createConv1Response = await fetch(`${SCRIPT_URL}createConversation`, {
+      const createConvResponse = await fetch(`${SCRIPT_URL}createConversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -154,20 +153,7 @@ function handleStart(): Middleware<Context<Update>> {
         }),
       });
 
-      // Also create reverse entry for partner
-      const createConv2Response = await fetch(`${SCRIPT_URL}createConversation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          conversationId, 
-          userId1: partnerId, 
-          userId2: userId, 
-          status: 'start',
-          timestamp: new Date().toISOString()
-        }),
-      });
-
-      if (createConv1Response.ok && createConv2Response.ok) {
+      if (createConvResponse.ok) {
         await ctx.reply(
           '🎉 Perfect match found!\n\n' +
           'You have been connected with a partner. Start chatting now!\n\n' +
@@ -184,7 +170,6 @@ function handleStart(): Middleware<Context<Update>> {
           );
         } catch (partnerError) {
           console.error('Error notifying partner:', partnerError);
-          // Continue anyway, partner will see the conversation when they message
         }
       } else {
         await ctx.reply('Error creating conversation. Please try again.');
@@ -237,7 +222,6 @@ function handleSearch(): Middleware<Context<Update>> {
       const checkLiveData = await checkLiveResponse.json();
 
       if (!checkLiveData.isLive) {
-        // Set to live (update or add)
         const updateResponse = await fetch(`${SCRIPT_URL}updateUserStatus`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -260,12 +244,12 @@ function handleSearch(): Middleware<Context<Update>> {
       const findPartnerResponse = await fetch(`${SCRIPT_URL}findRandomLiveUser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }), // Exclude self
+        body: JSON.stringify({ userId }),
       });
 
       const findPartnerData = await findPartnerResponse.json();
 
-      if (!findPartnerData.success || !findPartnerData.partnerId) {
+      if (!findPartnerData.success || !findPartnerData.partnerId || findPartnerData.partnerId === userId) {
         await ctx.reply(
           'No available partners right now. 😔\n\n' +
           'Please wait a moment and try /search again. More people are joining every day!'
@@ -277,7 +261,7 @@ function handleSearch(): Middleware<Context<Update>> {
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       // Create conversation for both users
-      const createConv1Response = await fetch(`${SCRIPT_URL}createConversation`, {
+      const createConvResponse = await fetch(`${SCRIPT_URL}createConversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -289,20 +273,7 @@ function handleSearch(): Middleware<Context<Update>> {
         }),
       });
 
-      // Also create reverse entry for partner
-      const createConv2Response = await fetch(`${SCRIPT_URL}createConversation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          conversationId, 
-          userId1: partnerId, 
-          userId2: userId, 
-          status: 'start',
-          timestamp: new Date().toISOString()
-        }),
-      });
-
-      if (createConv1Response.ok && createConv2Response.ok) {
+      if (createConvResponse.ok) {
         await ctx.reply(
           '🎉 Perfect match found!\n\n' +
           'You have been connected with a partner. Start chatting now!\n\n' +
@@ -319,7 +290,6 @@ function handleSearch(): Middleware<Context<Update>> {
           );
         } catch (partnerError) {
           console.error('Error notifying partner:', partnerError);
-          // Continue anyway, partner will see the conversation when they message
         }
       } else {
         await ctx.reply('Error creating conversation. Please try again.');
@@ -373,7 +343,7 @@ function handleStop(): Middleware<Context<Update>> {
               'Use /start or /search to find a new partner!'
             );
 
-            // Set partner status to offline too
+            // Set partner status to offline
             await fetch(`${SCRIPT_URL}updateUserStatus`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -399,7 +369,6 @@ function handleMessage(): Middleware<Context<Update>> {
     const userId = ctx.from?.id?.toString() || '';
     const chatId = ctx.chat?.id?.toString() || '';
 
-    // Check if message exists and has text property
     if (!ctx.message || !('text' in ctx.message)) {
       return; // Skip non-text messages or undefined messages
     }
@@ -432,7 +401,7 @@ function handleMessage(): Middleware<Context<Update>> {
         try {
           await bot.telegram.sendMessage(
             partnerId,
-            `${ctx.from?.first_name || 'User'}: ${messageText}`
+            messageText // Forward only the message text
           );
         } catch (forwardError) {
           console.error('Error forwarding message:', forwardError);
@@ -446,7 +415,6 @@ function handleMessage(): Middleware<Context<Update>> {
           "2️⃣ Use /search to find a partner"
         );
       } else {
-        // User is not in any conversation, show help
         await ctx.reply(
           "👋 Hi there!\n\n" +
           "To start chatting with others:\n\n" +
