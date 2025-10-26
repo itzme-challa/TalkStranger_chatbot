@@ -1,7 +1,11 @@
 import { Telegraf, Context, MiddlewareFn } from 'telegraf';
 import { about } from './commands';
+import { greeting, hasMessageId } from './text/greeting';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
+import createDebug from 'debug';
+
+const debug = createDebug('bot:main');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || '';
@@ -14,15 +18,12 @@ const isTextMessage = (msg: any): msg is { message_id: number; text: string } =>
   return msg && typeof msg === 'object' && 'text' in msg && typeof msg.text === 'string';
 };
 
-// Type guard for message_id
-const hasMessageId = (msg: any): msg is { message_id: number } => {
-  return msg && typeof msg === 'object' && 'message_id' in msg && typeof msg.message_id === 'number';
-};
-
 // Helper function to find a new partner
 async function findNewPartner(ctx: Context, userId: string): Promise<void> {
+  debug(`Starting findNewPartner for userId: ${userId}`);
   try {
     // Check if user is already in an active conversation
+    debug('Checking active conversation');
     const activeConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -31,15 +32,16 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
         userId: userId
       })
     });
-    
     const convData = await activeConv.json();
-    
+    debug(`checkActiveConversation response: ${JSON.stringify(convData)}`);
+
     if (convData.hasActive) {
       await ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
       return;
     }
     
     // Check user status
+    debug('Checking user status');
     const userStatus = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -48,11 +50,11 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
         userId: userId
       })
     });
-    
     const statusData = await userStatus.json();
-    
+    debug(`getUserStatus response: ${JSON.stringify(statusData)}`);
+
     if (statusData.status !== 'live') {
-      // Set user to live
+      debug(`Updating user status to live for userId: ${userId}`);
       await fetch(SHEET_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,6 +67,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     }
     
     // Find random live user (not self)
+    debug('Finding random live user');
     const randomUser = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -73,15 +76,16 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
         excludeUserId: userId
       })
     });
-    
     const matchData = await randomUser.json();
-    
+    debug(`findRandomLiveUser response: ${JSON.stringify(matchData)}`);
+
     if (!matchData.success || !matchData.partnerId) {
       await ctx.reply('😔 No available partners right now. Try again later with /start or /search!');
       return;
     }
     
     // Create conversation
+    debug(`Creating conversation between ${userId} and ${matchData.partnerId}`);
     const conversation = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -92,9 +96,9 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
         status: 'start'
       })
     });
-    
     const convResult = await conversation.json();
-    
+    debug(`createConversation response: ${JSON.stringify(convResult)}`);
+
     if (convResult.success) {
       await ctx.reply(
         `Partner found 🐵\n` +
@@ -106,6 +110,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
       
       // Notify partner
       try {
+        debug(`Notifying partner ${matchData.partnerId}`);
         await bot.telegram.sendMessage(matchData.partnerId, 
           `Partner found 🐵\n` +
           `/stop — stop this dialog\n` +
@@ -114,11 +119,16 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
           `To report partner: @itzfew`
         );
       } catch (partnerError) {
+        debug(`Error notifying partner: ${partnerError}`);
         console.error('Error notifying partner:', partnerError);
         await ctx.reply('Your partner was matched but might not receive notifications. You can start chatting!');
       }
+    } else {
+      debug(`Conversation creation failed: ${JSON.stringify(convResult)}`);
+      await ctx.reply('😓 Failed to create conversation. Please try again with /start or /search.');
     }
   } catch (error) {
+    debug(`Error in findNewPartner: ${error}`);
     console.error('Error finding new partner:', error);
     await ctx.reply('😓 Sorry, something went wrong while finding a match. Please try again with /start or /search.');
   }
@@ -129,10 +139,15 @@ bot.command('start', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   const userName = `${ctx.from?.first_name || ''} ${ctx.from?.last_name || ''}`.trim();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /start');
+    return;
+  }
   
+  debug(`Starting /start for userId: ${userId}, userName: ${userName}`);
   try {
     // Check if user already exists in chats
+    debug('Checking if user exists');
     const checkUser = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -141,11 +156,12 @@ bot.command('start', async (ctx: Context): Promise<void> => {
         userId: userId
       })
     });
-    
     const userData = await checkUser.json();
-    
+    debug(`getUser response: ${JSON.stringify(userData)}`);
+
     if (userData.exists) {
       // Update existing user to live and find partner
+      debug(`User exists, updating status to live for userId: ${userId}`);
       await fetch(SHEET_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -160,6 +176,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
       await findNewPartner(ctx, userId);
     } else {
       // Create new user
+      debug(`Creating new user: ${userId}`);
       await fetch(SHEET_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,6 +191,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
+    debug(`Error in /start: ${error}`);
     console.error('Error in /start:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again later with /start or /search.');
   }
@@ -183,8 +201,12 @@ bot.command('start', async (ctx: Context): Promise<void> => {
 bot.command('search', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /search');
+    return;
+  }
   
+  debug(`Starting /search for userId: ${userId}`);
   await ctx.reply('🔍 Looking for a new chat partner...');
   await findNewPartner(ctx, userId);
 });
@@ -193,10 +215,15 @@ bot.command('search', async (ctx: Context): Promise<void> => {
 bot.command('stop', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /stop');
+    return;
+  }
   
+  debug(`Starting /stop for userId: ${userId}`);
   try {
     // Find and end user's active conversation
+    debug('Ending active conversation');
     const endConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -205,9 +232,9 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
         userId: userId
       })
     });
-    
     const endResult = await endConv.json();
-    
+    debug(`endConversation response: ${JSON.stringify(endResult)}`);
+
     if (endResult.success) {
       await ctx.reply(
         `You stopped the dialog 🙄\n` +
@@ -219,6 +246,7 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
       // Notify partner if conversation existed
       if (endResult.partnerId) {
         try {
+          debug(`Notifying partner ${endResult.partnerId} about stop`);
           await bot.telegram.sendMessage(endResult.partnerId, 
             `Your partner has stopped the dialog 😞\n` +
             `Type /search to find a new partner\n` +
@@ -226,6 +254,7 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
             `To report partner: @itzfew`
           );
         } catch (partnerError) {
+          debug(`Error notifying partner about stop: ${partnerError}`);
           console.error('Error notifying partner about stop:', partnerError);
         }
       }
@@ -233,6 +262,7 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
       await ctx.reply('🤔 No active conversation found. Start a new one with /start or /search!');
     }
   } catch (error) {
+    debug(`Error in /stop: ${error}`);
     console.error('Error in /stop:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
@@ -242,10 +272,15 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
 bot.command('next', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /next');
+    return;
+  }
   
+  debug(`Starting /next for userId: ${userId}`);
   try {
     // Find and end user's active conversation
+    debug('Ending active conversation');
     const endConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -254,9 +289,9 @@ bot.command('next', async (ctx: Context): Promise<void> => {
         userId: userId
       })
     });
-    
     const endResult = await endConv.json();
-    
+    debug(`endConversation response: ${JSON.stringify(endResult)}`);
+
     if (endResult.success && endResult.partnerId) {
       await ctx.reply(
         `You stopped the dialog 🙄\n` +
@@ -267,6 +302,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
       
       // Notify partner
       try {
+        debug(`Notifying partner ${endResult.partnerId} about next`);
         await bot.telegram.sendMessage(endResult.partnerId, 
           `Your partner has stopped the dialog 😞\n` +
           `Type /search to find a new partner\n` +
@@ -274,6 +310,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
           `To report partner: @itzfew`
         );
       } catch (partnerError) {
+        debug(`Error notifying partner about next: ${partnerError}`);
         console.error('Error notifying partner about next:', partnerError);
       }
       
@@ -285,6 +322,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
+    debug(`Error in /next: ${error}`);
     console.error('Error in /next:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again with /start or /search.');
   }
@@ -294,10 +332,15 @@ bot.command('next', async (ctx: Context): Promise<void> => {
 bot.command('link', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /link');
+    return;
+  }
   
+  debug(`Starting /link for userId: ${userId}`);
   try {
     // Check if user is in an active conversation
+    debug('Checking active conversation');
     const activeConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -306,9 +349,9 @@ bot.command('link', async (ctx: Context): Promise<void> => {
         userId: userId
       })
     });
-    
     const convData = await activeConv.json();
-    
+    debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
+
     if (!convData.success || !convData.partnerId) {
       await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
       return;
@@ -316,16 +359,19 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     
     // Notify partner of profile request
     try {
+      debug(`Notifying partner ${convData.partnerId} about link request`);
       await bot.telegram.sendMessage(convData.partnerId, 
         `Your partner wants your profile /share here\n` +
         `Conversation id: ${convData.conversationId}`
       );
       await ctx.reply(`📬 Profile request sent to your partner! They can share with /share.\nConversation id: ${convData.conversationId}`);
     } catch (partnerError) {
+      debug(`Error notifying partner about link request: ${partnerError}`);
       console.error('Error notifying partner about link request:', partnerError);
       await ctx.reply('😓 Sorry, I couldn’t send the profile request. Please try again.');
     }
   } catch (error) {
+    debug(`Error in /link: ${error}`);
     console.error('Error in /link:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
@@ -335,10 +381,15 @@ bot.command('link', async (ctx: Context): Promise<void> => {
 bot.command('share', async (ctx: Context): Promise<void> => {
   const userId = ctx.from?.id?.toString();
   
-  if (!userId) return;
+  if (!userId) {
+    debug('No userId found in /share');
+    return;
+  }
   
+  debug(`Starting /share for userId: ${userId}`);
   try {
     // Check if user is in an active conversation
+    debug('Checking active conversation');
     const activeConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -347,29 +398,32 @@ bot.command('share', async (ctx: Context): Promise<void> => {
         userId: userId
       })
     });
-    
     const convData = await activeConv.json();
-    
+    debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
+
     if (!convData.success || !convData.partnerId) {
       await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
-    // Get user profile URL (assuming Telegram user ID can be used to construct profile URL)
+    // Get user profile URL
     const profileUrl = `https://t.me/${ctx.from?.username || userId}`;
     
     // Send profile to partner
     try {
+      debug(`Sharing profile with partner ${convData.partnerId}`);
       await bot.telegram.sendMessage(convData.partnerId, 
         `Your partner shared their profile: ${profileUrl}\n` +
         `Conversation id: ${convData.conversationId}`
       );
       await ctx.reply(`📤 Your profile has been shared with your partner!\nConversation id: ${convData.conversationId}`);
     } catch (partnerError) {
+      debug(`Error sharing profile: ${partnerError}`);
       console.error('Error sharing profile:', partnerError);
       await ctx.reply('😓 Sorry, I couldn’t share your profile. Please try again.');
     }
   } catch (error) {
+    debug(`Error in /share: ${error}`);
     console.error('Error in /share:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
@@ -377,69 +431,17 @@ bot.command('share', async (ctx: Context): Promise<void> => {
 
 bot.command('about', about());
 
-// Handle all text messages
-bot.on('text', async (ctx: Context): Promise<void> => {
-  const message = ctx.message;
-  const userId = ctx.from?.id?.toString();
-  
-  if (!userId || !message || !isTextMessage(message)) return;
-  
-  const messageText = message.text;
-  const messageId = message.message_id;
-  
-  if (messageText.startsWith('/')) return;
-  
-  try {
-    // Check if user is in an active conversation
-    const activeConv = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getActiveConversation',
-        userId: userId
-      })
-    });
-    
-    const convData = await activeConv.json();
-    
-    if (!convData.success || !convData.partnerId) {
-      // No active conversation, suggest starting one
-      if (messageText.toLowerCase().includes('search') || messageText.toLowerCase().includes('match')) {
-        await ctx.reply('🔍 To find a partner, use /start or /search command.');
-      } else {
-        await ctx.reply(
-          `🤔 I’m not sure what you mean. Use these commands to get started:\n` +
-          `/start - Join and find a partner\n` +
-          `/search - Find a new partner\n` +
-          `/stop - End current conversation\n` +
-          `/next - Switch to a new partner\n` +
-          `/link - Request partner’s profile\n` +
-          `/share - Share your profile\n` +
-          `/about - Learn more about the bot`
-        );
-      }
-      return;
-    }
-    
-    // Forward message to partner anonymously
-    try {
-      await bot.telegram.sendMessage(convData.partnerId, messageText);
-    } catch (forwardError) {
-      console.error('Error forwarding message:', forwardError);
-      await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
-    }
-  } catch (error) {
-    console.error('Error handling message:', error);
-    await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
-  }
-});
+// Integrate greeting middleware for non-command text messages
+bot.on('text', greeting);
 
 //prod mode (Vercel)
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
+  debug('Starting Vercel production mode');
   await production(req, res, bot);
 };
 
 //dev mode
 if (ENVIRONMENT !== 'production') {
+  debug('Starting development mode');
   development(bot);
 }
