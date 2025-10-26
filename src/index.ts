@@ -429,7 +429,8 @@ bot.command('share', async (ctx: Context): Promise<void> => {
   }
 });
 
-bot.command('about', about());
+// About command (pass function reference to avoid TS2554)
+bot.command('about', about); // Line ~450
 
 // Handle text messages for active conversations or fall back to greeting
 bot.on('text', async (ctx: Context): Promise<void> => {
@@ -465,7 +466,7 @@ bot.on('text', async (ctx: Context): Promise<void> => {
     if (convData.success && convData.partnerId) {
       // Forward message to partner
       try {
-        await bot.telegram.sendMessage(convData.partnerId, messageText);
+        await bot.telegram.sendMessage(convData.partnerId, messageText); // Line ~470
         debug(`Message forwarded to partner ${convData.partnerId}`);
       } catch (forwardError) {
         debug(`Error forwarding message: ${forwardError}`);
@@ -475,7 +476,7 @@ bot.on('text', async (ctx: Context): Promise<void> => {
     } else {
       // No active conversation, use greeting middleware
       debug('No active conversation, falling back to greeting');
-      await greeting(ctx); // Correct: greeting expects a single Context argument
+      await greeting(ctx); // Line ~478 (potential error point)
     }
   } catch (error) {
     debug(`Error handling message: ${error}`);
