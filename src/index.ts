@@ -431,8 +431,58 @@ bot.command('share', async (ctx: Context): Promise<void> => {
 
 bot.command('about', about());
 
-// Integrate greeting middleware for non-command text messages
-bot.on('text', greeting);
+// Handle text messages for active conversations or fall back to greeting
+bot.on('text', async (ctx: Context): Promise<void> => {
+  const message = ctx.message;
+  const userId = ctx.from?.id?.toString();
+  
+  if (!userId || !message || !isTextMessage(message)) {
+    debug('Invalid message or userId in text handler');
+    return;
+  }
+  
+  const messageText = message.text;
+  if (messageText.startsWith('/')) {
+    debug(`Ignoring command text: ${messageText}`);
+    return;
+  }
+  
+  debug(`Handling text message from ${userId}: ${messageText}`);
+  
+  try {
+    // Check if user is in an active conversation
+    const activeConv = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getActiveConversation',
+        userId: userId
+      })
+    });
+    const convData = await activeConv.json();
+    debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
+    
+    if (convData.success && convData.partnerId) {
+      // Forward message to partner
+      try {
+        await bot.telegram.sendMessage(convData.partnerId, messageText);
+        debug(`Message forwarded to partner ${convData.partnerId}`);
+      } catch (forwardError) {
+        debug(`Error forwarding message: ${forwardError}`);
+        console.error('Error forwarding message:', forwardError);
+        await ctx.reply('😓 Sorry, I couldn’t send your message. Please try again.');
+      }
+    } else {
+      // No active conversation, use greeting middleware
+      debug('No active conversation, falling back to greeting');
+      await greeting(ctx);
+    }
+  } catch (error) {
+    debug(`Error handling message: ${error}`);
+    console.error('Error handling message:', error);
+    await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
+  }
+});
 
 //prod mode (Vercel)
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
