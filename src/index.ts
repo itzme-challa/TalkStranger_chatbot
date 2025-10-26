@@ -318,7 +318,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
       await ctx.reply('🔍 Looking for a new chat partner...');
       await findNewPartner(ctx, userId);
     } else {
-      await ctx.reply('🤔 No active conversation found. Let's find you a new partner...');
+      await ctx.reply('🤔 No active conversation found. Let\'s find you a new partner...');
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
@@ -353,7 +353,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You\'re not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -368,7 +368,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error notifying partner about link request: ${partnerError}`);
       console.error('Error notifying partner about link request:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn't send the profile request. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn\'t send the profile request. Please try again.');
     }
   } catch (error) {
     debug(`Error in /link: ${error}`);
@@ -402,7 +402,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You\'re not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -420,7 +420,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error sharing profile: ${partnerError}`);
       console.error('Error sharing profile:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn't share your profile. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn\'t share your profile. Please try again.');
     }
   } catch (error) {
     debug(`Error in /share: ${error}`);
@@ -471,7 +471,7 @@ bot.on('text', async (ctx: Context): Promise<void> => {
       } catch (forwardError) {
         debug(`Error forwarding message: ${forwardError}`);
         console.error('Error forwarding message:', forwardError);
-        await ctx.reply('😓 Sorry, I couldn't send your message. Please try again.');
+        await ctx.reply('😓 Sorry, I couldn\'t send your message. Please try again.');
       }
     } else {
       // No active conversation, use greeting function directly
