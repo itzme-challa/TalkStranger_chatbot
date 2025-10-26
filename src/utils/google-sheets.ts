@@ -1,5 +1,5 @@
 export function getScriptUrl(sheetId: string): string {
   // In production, you'll need to deploy this as a Google Apps Script web app
   // and replace this URL with your actual deployment URL
-  return `https://script.google.com/macros/s/AKfycbxQ3absFacwApMfr9RrI6irYB5UgqihEIWyj2jU4TJ2er3hoss8SO8BobhhSjITzks/exec?action=`;
+  return `https://script.google.com/macros/s/AKfycbx9dxycd5k-VTsyuFBHw5mS1ukmhLxsW4zb8YkyzezDeo_QEQABFN3BxnvLBRx9_FrG/exec?action=`;
 }
