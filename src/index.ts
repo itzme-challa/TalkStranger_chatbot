@@ -430,22 +430,22 @@ bot.command('share', async (ctx: Context): Promise<void> => {
 });
 
 // About command (Line ~433, fixing TS2345)
-bot.command('about', about); // Corrected to use direct middleware function
+bot.command('about', about);
 
 // Handle text messages for active conversations or fall back to greeting
-bot.on('text', async (ctx: Context): Promise<void> => {
+bot.on('text', async (ctx: Context, next: () => Promise<void>): Promise<void> => {
   const message = ctx.message;
   const userId = ctx.from?.id?.toString();
   
   if (!userId || !message || !isTextMessage(message)) {
     debug('Invalid message or userId in text handler');
-    return;
+    return next();
   }
   
   const messageText = message.text;
   if (messageText.startsWith('/')) {
     debug(`Ignoring command text: ${messageText}`);
-    return;
+    return next();
   }
   
   debug(`Handling text message from ${userId}: ${messageText}`);
@@ -476,12 +476,14 @@ bot.on('text', async (ctx: Context): Promise<void> => {
     } else {
       // No active conversation, use greeting middleware
       debug('No active conversation, falling back to greeting');
-      await greeting(ctx); // Line ~479 (TS2554 reported here)
+      await greeting(ctx); // Line ~479 (fixing TS2554 by ensuring middleware chain)
     }
+    await next();
   } catch (error) {
     debug(`Error handling message: ${error}`);
     console.error('Error handling message:', error);
     await ctx.reply('😓 Something went wrong. Please use /start or /search to find a partner.');
+    await next();
   }
 });
 
