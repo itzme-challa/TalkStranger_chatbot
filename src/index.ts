@@ -1,4 +1,5 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf, Context, Middleware } from 'telegraf';
+import { Update } from 'telegraf/typings/core/types/typegram';
 import { about } from './commands';
 import { greeting } from './text';
 import { VercelRequest, VercelResponse } from '@vercel/node';
@@ -21,7 +22,7 @@ bot.command('search', handleSearch());
 bot.command('stop', handleStop());
 
 // Handle all messages
-bot.on('message', handleMessage);
+bot.on('message', handleMessage());
 
 // Production mode (Vercel)
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
@@ -33,8 +34,8 @@ ENVIRONMENT !== 'production' && development(bot);
 
 // MARK: Command Handlers
 
-async function handleStart() {
-  return async (ctx: Context) => {
+function handleStart(): Middleware<Context<Update>> {
+  return async (ctx: Context<Update>) => {
     const chatId = ctx.chat?.id?.toString() || '';
     const userId = ctx.from?.id?.toString() || '';
     const firstName = ctx.from?.first_name || '';
@@ -104,8 +105,8 @@ async function handleStart() {
   };
 }
 
-async function handleSearch() {
-  return async (ctx: Context) => {
+function handleSearch(): Middleware<Context<Update>> {
+  return async (ctx: Context<Update>) => {
     const userId = ctx.from?.id?.toString() || '';
     const chatId = ctx.chat?.id?.toString() || '';
 
@@ -225,8 +226,8 @@ async function handleSearch() {
   };
 }
 
-async function handleStop() {
-  return async (ctx: Context) => {
+function handleStop(): Middleware<Context<Update>> {
+  return async (ctx: Context<Update>) => {
     const userId = ctx.from?.id?.toString() || '';
 
     if (!userId) {
@@ -287,11 +288,17 @@ async function handleStop() {
   };
 }
 
-async function handleMessage() {
-  return async (ctx: Context) => {
+function handleMessage(): Middleware<Context<Update>> {
+  return async (ctx: Context<Update>) => {
     const userId = ctx.from?.id?.toString() || '';
     const chatId = ctx.chat?.id?.toString() || '';
-    const messageText = ctx.message?.text || '';
+
+    // Narrow down the message type to ensure it has 'text'
+    if (!('text' in ctx.message)) {
+      return; // Skip non-text messages
+    }
+
+    const messageText = ctx.message.text;
 
     if (!userId || !chatId || !messageText) {
       return; // Skip empty or invalid messages
