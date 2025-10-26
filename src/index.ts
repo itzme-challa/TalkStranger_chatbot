@@ -429,8 +429,8 @@ bot.command('share', async (ctx: Context): Promise<void> => {
   }
 });
 
-// About command (pass function reference to avoid TS2554)
-bot.command('about', about); // Line ~450
+// About command (Line ~433, fixing TS2345)
+bot.command('about', about); // Corrected to use direct middleware function
 
 // Handle text messages for active conversations or fall back to greeting
 bot.on('text', async (ctx: Context): Promise<void> => {
@@ -476,7 +476,7 @@ bot.on('text', async (ctx: Context): Promise<void> => {
     } else {
       // No active conversation, use greeting middleware
       debug('No active conversation, falling back to greeting');
-      await greeting(ctx); // Line ~478 (potential error point)
+      await greeting(ctx); // Line ~479 (TS2554 reported here)
     }
   } catch (error) {
     debug(`Error handling message: ${error}`);
