@@ -293,9 +293,9 @@ function handleMessage(): Middleware<Context<Update>> {
     const userId = ctx.from?.id?.toString() || '';
     const chatId = ctx.chat?.id?.toString() || '';
 
-    // Narrow down the message type to ensure it has 'text'
-    if (!('text' in ctx.message)) {
-      return; // Skip non-text messages
+    // Check if message exists and has text property
+    if (!ctx.message || !('text' in ctx.message)) {
+      return; // Skip non-text messages or undefined messages
     }
 
     const messageText = ctx.message.text;
