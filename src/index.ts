@@ -232,7 +232,7 @@ bot.command('stop', async (ctx: Context): Promise<void> => {
     } else {
       await ctx.reply('🤔 No active conversation found. Start a new one with /start or /search!');
     }
-  } else {
+  } catch (error) {
     console.error('Error in /stop:', error);
     await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
@@ -440,4 +440,6 @@ export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
 };
 
 //dev mode
-ENVIRONMENT !== 'production' && development(bot);
+if (ENVIRONMENT !== 'production') {
+  development(bot);
+}
