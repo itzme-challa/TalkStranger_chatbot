@@ -1,6 +1,6 @@
 import { Telegraf, Context, MiddlewareFn } from 'telegraf';
 import { about } from './commands';
-import { greeting, hasMessageId } from './text/greeting';
+import { hasMessageId } from './text/greeting';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { development, production } from './core';
 import createDebug from 'debug';
@@ -18,24 +18,27 @@ const isTextMessage = (msg: any): msg is { message_id: number; text: string } =>
   return msg && typeof msg === 'object' && 'text' in msg && typeof msg.text === 'string';
 };
 
-// Helper function to forward messages between partners
-async function forwardMessageToPartner(ctx: Context): Promise<void> {
+// Modified greeting middleware to skip welcome message if user is in active conversation
+const greeting: MiddlewareFn<Context> = async (ctx: Context, next: () => Promise<void>) => {
   const userId = ctx.from?.id?.toString();
-  
-  if (!userId) {
-    debug('No userId found in message');
+  const message = ctx.message;
+
+  if (!userId || !isTextMessage(message)) {
+    debug('Invalid userId or message in greeting middleware');
+    await next();
     return;
   }
 
-  // Skip if message is from bot or is a command
-  if (ctx.message && 'text' in ctx.message && ctx.message.text.startsWith('/')) {
+  // Skip commands
+  if (message.text.startsWith('/')) {
+    debug(`Skipping command in greeting: ${message.text}`);
+    await next();
     return;
   }
 
-  debug(`Checking message forwarding for userId: ${userId}`);
-  
   try {
     // Check if user is in an active conversation
+    debug(`Checking active conversation in greeting for userId: ${userId}`);
     const activeConv = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,72 +48,36 @@ async function forwardMessageToPartner(ctx: Context): Promise<void> {
       })
     });
     const convData = await activeConv.json();
-    debug(`getActiveConversation response for forwarding: ${JSON.stringify(convData)}`);
+    debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
-    if (!convData.success || !convData.partnerId) {
-      // Not in active conversation, send greeting or handle normally
+    // If user is in an active conversation, skip the welcome message
+    if (convData.success && convData.partnerId) {
+      debug(`User ${userId} is in active conversation, skipping greeting`);
+      await next();
       return;
     }
 
-    const partnerId = convData.partnerId;
-    
-    // Forward the message to partner
-    if (ctx.message && 'text' in ctx.message) {
-      debug(`Forwarding text message from ${userId} to ${partnerId}`);
-      await bot.telegram.sendMessage(partnerId, ctx.message.text);
-    } else if (ctx.message && 'photo' in ctx.message) {
-      debug(`Forwarding photo from ${userId} to ${partnerId}`);
-      const photo = ctx.message.photo[ctx.message.photo.length - 1]; // Get highest quality
-      await bot.telegram.sendPhoto(partnerId, photo.file_id);
-    } else if (ctx.message && 'video' in ctx.message) {
-      debug(`Forwarding video from ${userId} to ${partnerId}`);
-      await bot.telegram.sendVideo(partnerId, ctx.message.video.file_id);
-    } else if (ctx.message && 'document' in ctx.message) {
-      debug(`Forwarding document from ${userId} to ${partnerId}`);
-      await bot.telegram.sendDocument(partnerId, ctx.message.document.file_id);
-    } else if (ctx.message && 'audio' in ctx.message) {
-      debug(`Forwarding audio from ${userId} to ${partnerId}`);
-      await bot.telegram.sendAudio(partnerId, ctx.message.audio.file_id);
-    } else if (ctx.message && 'voice' in ctx.message) {
-      debug(`Forwarding voice from ${userId} to ${partnerId}`);
-      await bot.telegram.sendVoice(partnerId, ctx.message.voice.file_id);
-    } else if (ctx.message && 'sticker' in ctx.message) {
-      debug(`Forwarding sticker from ${userId} to ${partnerId}`);
-      await bot.telegram.sendSticker(partnerId, ctx.message.sticker.file_id);
-    }
-    
-    // Update conversation last activity
-    await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'updateConversationActivity',
-        conversationId: convData.conversationId
-      })
-    });
-    
+    // Send welcome message only if no active conversation
+    await ctx.reply(
+      `👋 Hi .! Welcome to the Chat Match Bot! 🎉\n\n` +
+      `Connect anonymously with random people and have fun chatting! Here’s how to get started:\n\n` +
+      `📋 Available commands:\n` +
+      `/start - Join and find a new chat partner\n` +
+      `/search - Find a new chat partner\n` +
+      `/stop - End your current conversation\n` +
+      `/next - Switch to a new partner\n` +
+      `/link - Request your partner’s profile\n` +
+      `/share - Share your profile with your partner\n` +
+      `/about - Learn more about this bot\n\n` +
+      `Try /start to meet someone new! 🚀`
+    );
   } catch (error) {
-    debug(`Error forwarding message: ${error}`);
-    console.error('Error forwarding message:', error);
-    
-    // If there's an error forwarding, notify the user
-    try {
-      await ctx.reply('😓 Failed to send message to your partner. They might have ended the conversation.');
-      
-      // End the conversation if there's an error
-      await fetch(SHEET_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'endConversation',
-          userId: userId
-        })
-      });
-    } catch (endError) {
-      debug(`Error ending conversation after forwarding failure: ${endError}`);
-    }
+    debug(`Error in greeting middleware: ${error}`);
+    console.error('Error in greeting middleware:', error);
+    await ctx.reply('😓 Sorry, there was an error. Please try again.');
   }
-}
+  await next();
+};
 
 // Helper function to find a new partner
 async function findNewPartner(ctx: Context, userId: string): Promise<void> {
@@ -130,7 +97,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
     debug(`checkActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (convData.hasActive) {
-      await ctx.reply('🌟 You\'re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
+      await ctx.reply('🌟 You’re already chatting with someone! Use /stop or /next to end the current conversation before finding a new partner.');
       return;
     }
     
@@ -187,7 +154,7 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
         action: 'createConversation',
         userId1: userId,
         userId2: matchData.partnerId,
-        status: 'active'
+        status: 'start'
       })
     });
     const convResult = await conversation.json();
@@ -195,12 +162,9 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
 
     if (convResult.success) {
       await ctx.reply(
-        `🎉 Partner found! You can start chatting now.\n\n` +
-        `Available commands:\n` +
-        `/stop — end this conversation\n` +
-        `/next — find a new partner\n` +
-        `/link — request partner's profile\n` +
-        `/share — share your profile\n\n` +
+        `Partner found 🐵\n` +
+        `/stop — stop this dialog\n` +
+        `/link — request your partner profile\n` +
         `Conversation id: ${convResult.conversationId}\n` +
         `To report partner: @itzfew`
       );
@@ -209,12 +173,9 @@ async function findNewPartner(ctx: Context, userId: string): Promise<void> {
       try {
         debug(`Notifying partner ${matchData.partnerId}`);
         await bot.telegram.sendMessage(matchData.partnerId, 
-          `🎉 Partner found! You can start chatting now.\n\n` +
-          `Available commands:\n` +
-          `/stop — end this conversation\n` +
-          `/next — find a new partner\n` +
-          `/link — request partner's profile\n` +
-          `/share — share your profile\n\n` +
+          `Partner found 🐵\n` +
+          `/stop — stop this dialog\n` +
+          `/link — request your partner profile\n` +
           `Conversation id: ${convResult.conversationId}\n` +
           `To report partner: @itzfew`
         );
@@ -272,7 +233,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
         })
       });
       
-      await ctx.reply(`🌈 Welcome back, ${userName}! Let's find you a new chat partner...`);
+      await ctx.reply(`🌈 Welcome back, ${userName}! Let’s find you a new chat partner...`);
       await findNewPartner(ctx, userId);
     } else {
       // Create new user
@@ -287,7 +248,7 @@ bot.command('start', async (ctx: Context): Promise<void> => {
         })
       });
       
-      await ctx.reply(`🎊 Welcome ${userName}! You're now in the chat system. Let's find you a chat partner...`);
+      await ctx.reply(`🎊 Welcome ${userName}! You're now in the chat system. Let’s find you a chat partner...`);
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
@@ -418,7 +379,7 @@ bot.command('next', async (ctx: Context): Promise<void> => {
       await ctx.reply('🔍 Looking for a new chat partner...');
       await findNewPartner(ctx, userId);
     } else {
-      await ctx.reply('🤔 No active conversation found. Let's find you a new partner...');
+      await ctx.reply('🤔 No active conversation found. Let’s find you a new partner...');
       await findNewPartner(ctx, userId);
     }
   } catch (error) {
@@ -453,7 +414,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -468,7 +429,7 @@ bot.command('link', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error notifying partner about link request: ${partnerError}`);
       console.error('Error notifying partner about link request:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn't send the profile request. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn’t send the profile request. Please try again.');
     }
   } catch (error) {
     debug(`Error in /link: ${error}`);
@@ -502,7 +463,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
 
     if (!convData.success || !convData.partnerId) {
-      await ctx.reply('🤔 You're not in an active conversation. Use /start or /search to find a partner!');
+      await ctx.reply('🤔 You’re not in an active conversation. Use /start or /search to find a partner!');
       return;
     }
     
@@ -520,7 +481,7 @@ bot.command('share', async (ctx: Context): Promise<void> => {
     } catch (partnerError) {
       debug(`Error sharing profile: ${partnerError}`);
       console.error('Error sharing profile:', partnerError);
-      await ctx.reply('😓 Sorry, I couldn't share your profile. Please try again.');
+      await ctx.reply('😓 Sorry, I couldn’t share your profile. Please try again.');
     }
   } catch (error) {
     debug(`Error in /share: ${error}`);
@@ -529,18 +490,61 @@ bot.command('share', async (ctx: Context): Promise<void> => {
   }
 });
 
-bot.command('about', about());
+// Handle non-command text messages for forwarding
+bot.on('text', async (ctx: Context): Promise<void> => {
+  const userId = ctx.from?.id?.toString();
+  const message = ctx.message;
 
-// Message handler for forwarding all non-command messages
-bot.on('message', async (ctx) => {
-  // Skip command messages
-  if (ctx.message && 'text' in ctx.message && ctx.message.text.startsWith('/')) {
+  if (!userId || !isTextMessage(message)) {
+    debug('Invalid userId or message in text handler');
     return;
   }
-  
-  // Forward the message to partner
-  await forwardMessageToPartner(ctx);
+
+  // Skip commands
+  if (message.text.startsWith('/')) {
+    debug(`Skipping command message: ${message.text}`);
+    return;
+  }
+
+  // Apply greeting middleware first
+  await greeting(ctx, async () => {
+    try {
+      // Check if user is in an active conversation
+      debug(`Checking active conversation for message forwarding, userId: ${userId}`);
+      const activeConv = await fetch(SHEET_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getActiveConversation',
+          userId: userId
+        })
+      });
+      const convData = await activeConv.json();
+      debug(`getActiveConversation response: ${JSON.stringify(convData)}`);
+
+      if (!convData.success || !convData.partnerId) {
+        debug(`No active conversation for userId: ${userId}`);
+        return; // Don't reply here to avoid redundant messages, as greeting middleware handles it
+      }
+
+      // Forward the message to the partner
+      try {
+        debug(`Forwarding message to partner ${convData.partnerId}`);
+        await bot.telegram.sendMessage(convData.partnerId, message.text);
+      } catch (partnerError) {
+        debug(`Error forwarding message to partner: ${partnerError}`);
+        console.error('Error forwarding message:', partnerError);
+        await ctx.reply('😓 Sorry, I couldn’t send your message to your partner. Please try again.');
+      }
+    } catch (error) {
+      debug(`Error in text message handler: ${error}`);
+      console.error('Error in text message handler:', error);
+      await ctx.reply('😓 Sorry, there was an error. Please try again.');
+    }
+  });
 });
+
+bot.command('about', about());
 
 //prod mode (Vercel)
 export const startVercel = async (req: VercelRequest, res: VercelResponse) => {
